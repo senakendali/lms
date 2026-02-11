@@ -1,0 +1,93 @@
+:root{
+  --brand-primary: #5b3e8e;
+  --brand-primary-dark: #4d347a;
+  --brand-primary-darker: #432d6a;
+
+  --brand-secondary: #4cb853;
+
+  --brand-text-dark: #111827;
+  --brand-text-muted: #6b7280;
+
+  --brand-bg-soft: #f5f1ff;
+  --brand-border-soft: rgba(91, 62, 142, .14);
+}
+
+/* Buttons */
+.btn-brand{
+  background-color: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #fff;
+  font-weight: 700;
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.btn-brand:hover{
+  background-color: var(--brand-primary-dark);
+  border-color: var(--brand-primary-dark);
+  color: #fff;
+}
+.btn-brand:active{
+  background-color: var(--brand-primary-darker);
+  border-color: var(--brand-primary-darker);
+  color: #fff;
+}
+.btn-brand:disabled{
+  background-color: rgba(91, 62, 142, .6);
+  border-color: rgba(91, 62, 142, .6);
+  color: #fff;
+}
+
+/* Links */
+.link-brand{
+  color: var(--brand-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+.link-brand:hover{ text-decoration: underline; }
+
+/* Forms */
+.form-control:focus{
+  border-color: rgba(91, 62, 142, .55);
+  box-shadow: 0 0 0 .25rem rgba(91, 62, 142, .18);
+}
+
+/* Soft badge */
+.badge-brand-soft{
+  background: rgba(76, 184, 83, .14);
+  color: #2b7a37;
+  border: 1px solid rgba(76, 184, 83, .25);
+}
+
+.accordion-button {
+    background: transparent;
+    box-shadow: none;
+}
+
+.accordion-button::after {
+    display: none; /* matiin chevron default bootstrap */
+}
+
+.accordion-item {
+    border: 0;
+}
+
+.accordion-button:hover {
+    background: rgba(91,62,142,.04);
+}
+
+.accordion-button:focus {
+    box-shadow: none;
+}
+
+.accordion-header .btn:focus {
+    box-shadow: none;
+}
+
+.accordion-header button.btn-light {
+    background: transparent;
+    border: none;
+}
+
+.accordion-header button.btn-light:hover {
+    background: rgba(0,0,0,.05);
+}
