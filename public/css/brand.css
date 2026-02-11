@@ -13,12 +13,15 @@
 }
 
 /* Buttons */
+.btn, .form-control, .form-select{
+  padding: 10px 14px;
+}
+
 .btn-brand{
   background-color: var(--brand-primary);
   border-color: var(--brand-primary);
   color: #fff;
   font-weight: 700;
-  border-radius: 12px;
   padding: 10px 14px;
 }
 .btn-brand:hover{

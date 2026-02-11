@@ -1,54 +1,105 @@
 <x-app-layout>
-    <h4 class="fw-bold mb-3" style="color:var(--brand-primary)">
-        Edit Instructor
-    </h4>
+  <div class="container-fluid p-0">
+    <div class="row g-3">
 
-    @if($errors->any())
-        <div class="alert alert-danger small rounded-3">
-            <ul class="mb-0">
-                @foreach($errors->all() as $e)
-                    <li>{{ $e }}</li>
-                @endforeach
+      {{-- HEADER --}}
+      <div class="col-12">
+        <div class="card">
+          <div class="card-body p-4 d-flex justify-content-between align-items-start flex-wrap gap-3">
+            <div class="d-flex align-items-center gap-2">
+              <span class="d-inline-flex align-items-center justify-content-center rounded-3"
+                    style="width:40px;height:40px;background:rgba(91,62,142,.12);color:var(--brand-primary)">
+                <i class="bi bi-person-gear"></i>
+              </span>
+              <div>
+                <h4 class="fw-bold mb-0" style="color:var(--brand-primary)">Edit Instructor</h4>
+                <div class="text-muted small">Update instructor data (password optional)</div>
+              </div>
+            </div>
+
+            <div class="d-flex gap-2 flex-wrap">
+              <a href="{{ route('admin.instructors.index') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i> Back
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {{-- ERRORS (ONLY IF EXISTS) --}}
+      @if($errors->any())
+        <div class="col-12">
+          <div class="alert alert-danger py-2 small rounded-3 mb-0">
+            <div class="fw-semibold mb-1">
+              <i class="bi bi-exclamation-triangle me-1"></i> Ada yang salah:
+            </div>
+            <ul class="mb-0 ps-3">
+              @foreach($errors->all() as $e)
+                <li>{{ $e }}</li>
+              @endforeach
             </ul>
+          </div>
         </div>
-    @endif
+      @endif
 
-    <div class="card">
-        <div class="card-body p-4">
-            <form method="POST"
-                  action="{{ route('admin.instructors.update', $instructor) }}">
-                @csrf
-                @method('PUT')
+      {{-- FORM --}}
+      <div class="col-12">
+        <div class="card">
+          <div class="card-body p-4">
+            <form method="POST" action="{{ route('admin.instructors.update', $instructor) }}">
+              @csrf
+              @method('PUT')
 
-                <div class="mb-3">
-                    <label class="form-label">Name</label>
-                    <input name="name"
-                           class="form-control"
-                           value="{{ $instructor->name }}" required>
+              <div class="row g-3">
+
+                <div class="col-12">
+                  <label class="form-label">Name</label>
+                  <input name="name"
+                         class="form-control"
+                         value="{{ old('name', $instructor->name) }}"
+                         required>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Email</label>
-                    <input name="email"
-                           type="email"
-                           class="form-control"
-                           value="{{ $instructor->email }}" required>
+                <div class="col-12">
+                  <label class="form-label">Email</label>
+                  <input name="email"
+                         type="email"
+                         class="form-control"
+                         value="{{ old('email', $instructor->email) }}"
+                         required>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">New Password (optional)</label>
-                    <input name="password" type="password" class="form-control">
+                <div class="col-12 col-md-6">
+                  <label class="form-label">New Password (optional)</label>
+                  <input name="password"
+                         type="password"
+                         class="form-control"
+                         placeholder="Kosongkan jika tidak diubah">
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Confirm New Password</label>
-                    <input name="password_confirmation" type="password" class="form-control">
+                <div class="col-12 col-md-6">
+                  <label class="form-label">Confirm New Password</label>
+                  <input name="password_confirmation"
+                         type="password"
+                         class="form-control"
+                         placeholder="Confirm new password">
                 </div>
 
-                <button class="btn btn-brand">Update</button>
-                <a href="{{ route('admin.instructors.index') }}"
-                   class="btn btn-outline-secondary">Cancel</a>
+                <div class="col-12 d-flex gap-2">
+                  <button class="btn btn-brand" type="submit">
+                    <i class="bi bi-save2 me-1"></i> Update
+                  </button>
+                  <a href="{{ route('admin.instructors.index') }}" class="btn btn-outline-secondary">
+                    Cancel
+                  </a>
+                </div>
+
+              </div>
             </form>
+          </div>
         </div>
+      </div>
+
     </div>
+  </div>
 </x-app-layout>

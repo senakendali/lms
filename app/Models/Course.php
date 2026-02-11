@@ -24,4 +24,13 @@ class Course extends Model
         return $this->hasMany(Module::class)->orderBy('order');
     }
 
+    public function students()
+    {
+        return $this->belongsToMany(\App\Models\User::class)
+            ->where('role', 'student')
+            ->withPivot(['status', 'completed_at'])
+            ->withTimestamps();
+    }
+
+
 }

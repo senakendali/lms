@@ -6,6 +6,12 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\InstructorController;
 use App\Http\Controllers\Admin\CourseController;
 use App\Http\Controllers\Instructor\MaterialController;
+use App\Http\Controllers\Admin\LeadController;
+use App\Http\Controllers\DashboardController;
+
+
+
+
 
 use App\Http\Controllers\Instructor\CourseController as InstructorCourseController;
 
@@ -15,9 +21,9 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/dashboard', [DashboardController::class, 'index'])
+    ->middleware(['auth', 'verified'])
+    ->name('dashboard');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -40,8 +46,17 @@ Route::middleware(['auth', 'role:admin'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
+
         Route::resource('courses', CourseController::class)->except(['show']);
+
+        // ✅ Assign Students (separate page from edit course)
+        Route::get('courses/{course}/students', [CourseController::class, 'editStudents'])
+            ->name('courses.students.edit');
+
+        Route::put('courses/{course}/students', [CourseController::class, 'updateStudents'])
+            ->name('courses.students.update');
     });
+
 
 Route::middleware(['auth','role:instructor'])
     ->prefix('instructor')
@@ -70,6 +85,12 @@ Route::middleware(['auth','role:instructor'])
         Route::delete('topics/{topic}', [MaterialController::class, 'destroyTopic'])->name('topics.destroy');
         Route::delete('materials/{material}', [MaterialController::class, 'destroyMaterial'])->name('materials.destroy');
     });
+
+
+Route::prefix('admin')->name('admin.')->middleware(['auth'])->group(function () {
+    Route::resource('leads', LeadController::class)->except(['show']);
+    Route::post('leads/{lead}/convert', [LeadController::class, 'convert'])->name('leads.convert');
+});
 
 
 

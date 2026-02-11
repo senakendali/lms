@@ -13,11 +13,18 @@ class CourseController extends Controller
     public function index(Request $request)
     {
         $q = trim((string) $request->get('q', ''));
-        $instructorId = $request->get('instructor_id', '');
-        $active = $request->get('active', '');
+        $instructorId = (string) $request->get('instructor_id', '');
+        $active = (string) $request->get('active', '');
+
+        // status dropdown untuk course (is_active)
+        $statuses = [
+            '1' => 'Active',
+            '0' => 'Inactive',
+        ];
 
         $courses = Course::query()
             ->with('instructor:id,name,email')
+            ->withCount('students') // ✅ student count untuk badge Assign
             ->when($q !== '', function ($query) use ($q) {
                 $query->where('title', 'like', "%{$q}%");
             })
@@ -25,18 +32,29 @@ class CourseController extends Controller
                 $query->where('instructor_id', $instructorId);
             })
             ->when($active !== '', function ($query) use ($active) {
-                $query->where('is_active', (bool) $active);
+                $query->where('is_active', $active === '1');
             })
             ->orderByDesc('id')
             ->paginate(10)
             ->withQueryString();
 
-        $instructors = User::where('role', 'instructor')
+        $instructors = User::query()
+            ->where('role', 'instructor')
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        return view('admin.courses.index', compact('courses', 'instructors', 'q', 'instructorId', 'active'));
+        return view('admin.courses.index', compact(
+            'courses',
+            'instructors',
+            'q',
+            'instructorId',
+            'active',
+            'statuses'
+        ));
     }
+
+
+
 
     public function create()
     {
@@ -121,4 +139,38 @@ class CourseController extends Controller
             ->route('admin.courses.index')
             ->with('status', 'Course berhasil dihapus.');
     }
+
+    public function editStudents(Course $course)
+    {
+        $students = User::where('role', 'student')
+            ->orderBy('name')
+            ->get();
+
+        $enrolledStudentIds = $course->students()
+            ->pluck('users.id')
+            ->toArray();
+
+        return view('admin.courses.assign-students', compact(
+            'course',
+            'students',
+            'enrolledStudentIds'
+        ));
+    }
+
+
+    public function updateStudents(Request $request, Course $course)
+    {
+        $studentIds = $request->input('student_ids', []);
+
+        // optional: pastiin array of ints
+        if (!is_array($studentIds)) $studentIds = [];
+
+        $course->students()->sync($studentIds);
+
+        return redirect()
+            ->route('admin.courses.index')
+            ->with('status', 'Students berhasil di-assign ke course.');
+    }
+
+
 }
