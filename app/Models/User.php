@@ -59,4 +59,10 @@ class User extends Authenticatable
         return $this->courses()->wherePivot('status', 'active');
     }
 
+    public function materialProgress()
+    {
+        return $this->hasMany(MaterialProgress::class);
+    }
+
+
 }

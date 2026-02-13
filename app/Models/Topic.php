@@ -7,7 +7,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Topic extends Model
 {
-    protected $fillable = ['module_id', 'title', 'order'];
+    protected $fillable = [
+        'module_id',
+        'title',
+        'order',
+        'delivery_type',
+        'pass_progress_pct',
+        'session_at',
+    ];
+
 
     public function module()
     {
@@ -18,6 +26,12 @@ class Topic extends Model
     {
         return $this->hasMany(Material::class)->orderBy('order');
     }
+
+    public function assignments()
+    {
+        return $this->hasMany(\App\Models\Assignment::class)->orderBy('order');
+    }
+
 }
 
 

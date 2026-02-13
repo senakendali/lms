@@ -22,6 +22,12 @@ class Material extends Model
         return $this->belongsTo(Topic::class);
     }
 
+    public function progresses()
+    {
+        return $this->hasMany(MaterialProgress::class);
+    }
+
+
     public function driveEmbedUrl()
     {
         return $this->drive_id

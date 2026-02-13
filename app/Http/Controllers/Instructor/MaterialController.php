@@ -9,6 +9,8 @@ use App\Models\Topic;
 use App\Models\Material;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
+
 
 class MaterialController extends Controller
 {
@@ -52,9 +54,13 @@ class MaterialController extends Controller
 
         $data = $request->validate([
             'title' => ['required','string','max:160'],
+            'learning_objectives' => ['nullable','string','max:2000'],
         ]);
 
-        $module->update(['title' => $data['title']]);
+        $module->update([
+            'title' => $data['title'],
+            'learning_objectives' => $data['learning_objectives'] ?? null,
+        ]);
 
         return back()->with('status', 'Module diupdate.');
     }
@@ -72,36 +78,48 @@ class MaterialController extends Controller
     public function storeTopic(Request $request)
     {
         $data = $request->validate([
-            'module_id' => ['required','exists:modules,id'],
-            'title'     => ['required','string','max:160'],
+            'module_id' => ['required', 'integer', 'exists:modules,id'],
+            'title' => ['required', 'string', 'max:255'],
+            'delivery_type' => ['nullable', Rule::in(['video', 'live', 'hybrid'])],
         ]);
 
-        $module = Module::with('course')->findOrFail($data['module_id']);
-        abort_if($module->course->instructor_id !== auth()->id(), 403);
+        $delivery = $data['delivery_type'] ?? 'video';
 
-        $nextOrder = (int) (Topic::where('module_id', $module->id)->max('order') ?? 0) + 1;
+        // kalau table topics punya kolom `order`, kita set auto ke last+1
+        $order = null;
+        $topicTableHasOrder = \Schema::hasColumn('topics', 'order');
+        if ($topicTableHasOrder) {
+            $max = Topic::where('module_id', $data['module_id'])->max('order');
+            $order = is_null($max) ? 1 : ((int)$max + 1);
+        }
 
         Topic::create([
-            'module_id' => $module->id,
-            'title'     => $data['title'],
-            'order'     => $nextOrder,
+            'module_id' => $data['module_id'],
+            'title' => $data['title'],
+            'delivery_type' => $delivery,
+            'order' => $order,
         ]);
 
-        return back()->with('status', 'Topic ditambahkan.');
+        return back()->with('status', 'Topic berhasil ditambahkan.');
     }
 
     public function updateTopic(Request $request, Topic $topic)
     {
-        $topic->load('module.course');
-        abort_if($topic->module->course->instructor_id !== auth()->id(), 403);
-
         $data = $request->validate([
-            'title' => ['required','string','max:160'],
+            'title' => ['sometimes', 'required', 'string', 'max:255'],
+            'subtopics' => ['nullable', 'string'], // outline html
+            'delivery_type' => ['nullable', Rule::in(['video', 'live', 'hybrid'])],
         ]);
 
-        $topic->update(['title' => $data['title']]);
+        // ✅ penting: kalau form update outline cuma kirim title+subtopics,
+        // delivery_type jangan dipaksa ada (kita keep existing).
+        if (!array_key_exists('delivery_type', $data) || empty($data['delivery_type'])) {
+            unset($data['delivery_type']);
+        }
 
-        return back()->with('status', 'Topic diupdate.');
+        $topic->update($data);
+
+        return back()->with('status', 'Topic berhasil diupdate.');
     }
 
     public function destroyTopic(Topic $topic)
@@ -113,58 +131,113 @@ class MaterialController extends Controller
         return back()->with('status', 'Topic dihapus.');
     }
 
-    // ================= MATERIAL (SUBTOPIC) =================
+    // ================= MATERIAL =================
     public function storeMaterial(Request $request)
     {
+        // NOTE:
+        // - Video form: title optional? (UI ngisi, tapi boleh kosong)
+        // - File upload form: name="files[]" multiple
+        // - Link form: title optional
         $data = $request->validate([
             'topic_id' => ['required','exists:topics,id'],
-            'title'    => ['required','string','max:160'],
+            'title'    => ['nullable','string','max:160'],
             'type'     => ['required','in:video,file,link'],
-            'drive_id' => ['nullable','string'],
-            'url'      => ['nullable','url'],
-            'file'     => ['nullable','file','mimes:pdf,doc,docx,ppt,pptx,xls,xlsx','max:10240'], // 10MB
+            'drive_id' => ['nullable','string','max:255'],
+            'url'      => ['nullable','url','max:2000'],
+            'file'     => ['nullable','file','mimes:pdf,doc,docx,ppt,pptx,xls,xlsx','max:10240'],
+            'files'    => ['nullable','array'],
+            'files.*'  => ['file','mimes:pdf,doc,docx,ppt,pptx,xls,xlsx','max:10240'],
         ]);
 
         $topic = Topic::with('module.course')->findOrFail($data['topic_id']);
         abort_if($topic->module->course->instructor_id !== auth()->id(), 403);
 
-        $nextOrder = (int) (Material::where('topic_id', $topic->id)->max('order') ?? 0) + 1;
+        // helper buat ambil order berikutnya per insert
+        $nextOrder = function () use ($topic) {
+            return (int) (Material::where('topic_id', $topic->id)->max('order') ?? 0) + 1;
+        };
 
-        $payload = [
-            'topic_id' => $topic->id,
-            'title'    => $data['title'],
-            'type'     => $data['type'],
-            'order'    => $nextOrder,
-            'drive_id' => null,
-            'url'      => null,
-            'file_path'=> null,
-        ];
+        // default title fallback biar ga kosong
+        $titleOr = function (string $fallback) use ($data) {
+            $t = trim((string)($data['title'] ?? ''));
+            return $t !== '' ? $t : $fallback;
+        };
 
+        // ===== VIDEO =====
         if ($data['type'] === 'video') {
             if (empty($data['drive_id'])) {
                 return back()->withErrors(['drive_id' => 'Drive File ID wajib diisi untuk video.'])->withInput();
             }
-            $payload['drive_id'] = $data['drive_id'];
+
+            Material::create([
+                'topic_id' => $topic->id,
+                'title'    => $titleOr('Video'),
+                'type'     => 'video',
+                'order'    => $nextOrder(),
+                'drive_id' => $data['drive_id'],
+                'url'      => null,
+                'file_path'=> null,
+            ]);
+
+            return back()->with('status', 'Video ditambahkan.');
         }
 
+        // ===== LINK =====
         if ($data['type'] === 'link') {
             if (empty($data['url'])) {
                 return back()->withErrors(['url' => 'URL wajib diisi untuk link.'])->withInput();
             }
-            $payload['url'] = $data['url'];
+
+            Material::create([
+                'topic_id' => $topic->id,
+                'title'    => $titleOr('Link'),
+                'type'     => 'link',
+                'order'    => $nextOrder(),
+                'drive_id' => null,
+                'url'      => $data['url'],
+                'file_path'=> null,
+            ]);
+
+            return back()->with('status', 'Link ditambahkan.');
         }
 
+        // ===== FILE (multiple) =====
+        // UI sekarang upload multiple: files[]
         if ($data['type'] === 'file') {
-            if (!$request->hasFile('file')) {
-                return back()->withErrors(['file' => 'File wajib diupload untuk tipe file.'])->withInput();
+            // support 2 kemungkinan: "files[]" (multiple) atau "file" (single)
+            $files = [];
+
+            if ($request->hasFile('files')) {
+                $files = $request->file('files');
+            } elseif ($request->hasFile('file')) {
+                $files = [$request->file('file')];
             }
-            $path = $request->file('file')->store('materials', 'public');
-            $payload['file_path'] = $path;
+
+            if (empty($files)) {
+                return back()->withErrors(['files' => 'Minimal upload 1 file.'])->withInput();
+            }
+
+            foreach ($files as $f) {
+                $path = $f->store('materials', 'public');
+
+                // kalau title kosong, pakai nama file
+                $fallbackTitle = pathinfo($f->getClientOriginalName(), PATHINFO_FILENAME);
+
+                Material::create([
+                    'topic_id' => $topic->id,
+                    'title'    => $titleOr($fallbackTitle),
+                    'type'     => 'file',
+                    'order'    => $nextOrder(),
+                    'drive_id' => null,
+                    'url'      => null,
+                    'file_path'=> $path,
+                ]);
+            }
+
+            return back()->with('status', 'File berhasil diupload.');
         }
 
-        Material::create($payload);
-
-        return back()->with('status', 'Material ditambahkan.');
+        return back()->withErrors(['type' => 'Tipe material tidak valid.'])->withInput();
     }
 
     public function updateMaterial(Request $request, Material $material)
@@ -175,8 +248,8 @@ class MaterialController extends Controller
         $data = $request->validate([
             'title'    => ['required','string','max:160'],
             'type'     => ['required','in:video,file,link'],
-            'drive_id' => ['nullable','string'],
-            'url'      => ['nullable','url'],
+            'drive_id' => ['nullable','string','max:255'],
+            'url'      => ['nullable','url','max:2000'],
             'file'     => ['nullable','file','mimes:pdf,doc,docx,ppt,pptx,xls,xlsx','max:10240'],
         ]);
 
@@ -202,19 +275,17 @@ class MaterialController extends Controller
         }
 
         if ($data['type'] === 'file') {
-            // kalau upload file baru, replace file lama
+            // replace file lama kalau upload baru
             if ($request->hasFile('file')) {
                 if ($material->file_path) {
                     Storage::disk('public')->delete($material->file_path);
                 }
                 $payload['file_path'] = $request->file('file')->store('materials', 'public');
             } else {
-                // tetap pakai file lama kalau belum upload
                 $payload['file_path'] = $material->file_path;
             }
         } else {
-            // kalau tipe pindah dari file ke non-file, opsional: hapus file lama
-            // biar storage ga numpuk:
+            // kalau pindah dari file ke non-file, hapus file lama biar storage ga numpuk
             if ($material->file_path) {
                 Storage::disk('public')->delete($material->file_path);
             }

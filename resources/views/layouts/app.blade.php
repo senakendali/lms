@@ -156,37 +156,40 @@
             @endif
 
             {{-- ================= STUDENT ================= --}}
-            @if(auth()->user()->role === 'student')
-                <a class="nav-link {{ request()->routeIs('dashboard') ? 'active' : '' }}"
-                   href="{{ route('dashboard') }}">
+           @if(auth()->user()->role === 'student')
+
+                <a class="nav-link {{ request()->routeIs('student.dashboard') ? 'active' : '' }}"
+                href="{{ route('dashboard') }}">
                     <i class="bi bi-speedometer2 me-2"></i> Dashboard
                 </a>
 
-                <a class="nav-link {{ request()->is('student/courses*') ? 'active' : '' }}"
-                   href="#">
+                <a class="nav-link {{ request()->routeIs('student.courses.*') ? 'active' : '' }}"
+                href="{{ route('student.courses.index') }}">
                     <i class="bi bi-journal-bookmark-fill me-2"></i> My Courses
                 </a>
 
-                <a class="nav-link {{ request()->is('student/progress*') ? 'active' : '' }}"
-                   href="#">
+                <a class="nav-link {{ request()->routeIs('student.progress.*') ? 'active' : '' }}"
+                href="{{ route('student.progress.index') }}">
                     <i class="bi bi-bar-chart-line me-2"></i> Learning Progress
                 </a>
 
-                <a class="nav-link {{ request()->is('student/assignments*') ? 'active' : '' }}"
-                   href="#">
+                <a class="nav-link {{ request()->routeIs('student.assignments.*') ? 'active' : '' }}"
+                href="{{ route('student.assignments.index') }}">
                     <i class="bi bi-pencil-square me-2"></i> Assignments
                 </a>
 
-                <a class="nav-link {{ request()->is('student/attendance*') ? 'active' : '' }}"
-                   href="#">
+                <a class="nav-link {{ request()->routeIs('student.attendance.*') ? 'active' : '' }}"
+                href="{{ route('student.attendance.index') }}">
                     <i class="bi bi-calendar-week me-2"></i> Attendance
                 </a>
 
-                <a class="nav-link {{ request()->is('student/certificates*') ? 'active' : '' }}"
-                   href="#">
+                <a class="nav-link {{ request()->routeIs('student.certificates.*') ? 'active' : '' }}"
+                href="{{ route('student.certificates.index') }}">
                     <i class="bi bi-award me-2"></i> Certificates
                 </a>
+
             @endif
+
         </nav>
 
         <!-- LOGOUT -->

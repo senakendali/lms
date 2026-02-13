@@ -94,3 +94,8 @@
 .accordion-header button.btn-light:hover {
     background: rgba(0,0,0,.05);
 }
+
+.accordion{
+  --bs-accordion-bg: transparent !important;
+}
+
