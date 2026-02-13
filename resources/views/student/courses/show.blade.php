@@ -6,6 +6,15 @@
     // helpers
     $courseInstructor = $course->instructor?->name ?? 'Instructor';
     $modules = $course->modules ?? collect();
+
+    // progress maps (kalau belum ada dari controller, aman)
+    $topicProgressMap = $topicProgressMap ?? [];
+    $videoProgressMap = $videoProgressMap ?? [];
+
+    // ✅ cek route SEKALI aja (biar ga dipanggil di dalam loop topic)
+    $hasMarkRoute = class_exists(\Illuminate\Support\Facades\Route::class)
+      ? \Illuminate\Support\Facades\Route::has('student.topics.mark')
+      : false;
   @endphp
 
   {{-- Header --}}
@@ -150,8 +159,9 @@
                       $files = $materials->where('type', 'file');
                       $links = $materials->where('type', 'link');
 
-                      // outline
-                      $subpoints = $topic->subtopics ?? $topic->focus_points ?? $topic->subtopic_points ?? null;
+                      // outline (amanin supaya string)
+                      $subpointsRaw = $topic->focus_points ?? $topic->subtopic_points ?? $topic->subtopics ?? null;
+                      $subpoints = is_string($subpointsRaw) ? $subpointsRaw : (string) $subpointsRaw;
                       $hasOutline = !empty(trim(strip_tags((string) $subpoints)));
 
                       $hasVideo = (bool) $video;
@@ -164,8 +174,26 @@
                       $assignments = $topic->assignments ?? collect();
                       $assignmentCount = $assignments->count();
 
-                      // progress placeholder per topic (nanti nyambung ke table progress)
-                      $topicDone = false;
+                      // delivery
+                      $delivery = $topic->delivery_type ?? 'video'; // video | live | hybrid
+
+                      // topic progress (kalau ada)
+                      $tp = $topicProgressMap[$topic->id] ?? null;
+                      $topicStatus = is_object($tp) ? ($tp->status ?? 'not_started') : ($tp['status'] ?? 'not_started');
+
+                      $topicDone = $topicStatus === 'done';
+                      $topicInProgress = $topicStatus === 'in_progress';
+
+                      $statusLabel = $topicDone ? 'Done' : ($topicInProgress ? 'In progress' : 'Not started');
+
+                      // video progress (kalau ada)
+                      $vp = $video ? ($videoProgressMap[$video->id] ?? null) : null;
+                      $videoPct = 0;
+                      if (is_object($vp)) {
+                        $videoPct = (int)($vp->progress_pct ?? 0);
+                      } elseif (is_array($vp)) {
+                        $videoPct = (int)($vp['progress_pct'] ?? 0);
+                      }
                     @endphp
 
                     <div class="card topic-card">
@@ -182,6 +210,12 @@
                               <div class="flex-grow-1">
                                 <div class="fw-semibold d-flex align-items-center gap-2 flex-wrap">
                                   <span>{{ $topic->title }}</span>
+
+                                  {{-- Delivery --}}
+                                  <span class="badge rounded-pill text-bg-light d-inline-flex align-items-center gap-1">
+                                    <i class="bi bi-broadcast text-secondary"></i>
+                                    <span class="text-uppercase">{{ $delivery }}</span>
+                                  </span>
 
                                   {{-- Outline --}}
                                   <span class="badge rounded-pill text-bg-light d-inline-flex align-items-center gap-1">
@@ -217,12 +251,21 @@
                                     <span>{{ $assignmentCount }} tugas</span>
                                   </span>
 
-                                  {{-- Topic progress placeholder --}}
-                                  <span class="badge rounded-pill {{ $topicDone ? 'text-bg-success' : 'text-bg-light' }}">
-                                    <i class="bi {{ $topicDone ? 'bi-check2-circle' : 'bi-circle' }} me-1"></i>
-                                    {{ $topicDone ? 'Done' : 'Not started' }}
+                                  {{-- Topic progress --}}
+                                  <span class="badge rounded-pill
+                                    {{ $topicDone ? 'text-bg-success' : ($topicInProgress ? 'text-bg-primary' : 'text-bg-light') }}">
+                                    <i class="bi
+                                      {{ $topicDone ? 'bi-check2-circle' : ($topicInProgress ? 'bi-play-circle' : 'bi-circle') }} me-1"></i>
+                                    {{ $statusLabel }}
                                   </span>
 
+                                  {{-- Small video pct --}}
+                                  @if($hasVideo)
+                                    <span class="badge rounded-pill text-bg-light d-inline-flex align-items-center gap-1">
+                                      <i class="bi bi-bar-chart-line text-secondary"></i>
+                                      <span>{{ $videoPct }}%</span>
+                                    </span>
+                                  @endif
                                 </div>
                               </div>
                             </div>
@@ -241,6 +284,68 @@
                         {{-- TOPIC DETAIL --}}
                         <div id="topic-{{ $topic->id }}" class="collapse mt-3">
                           <div class="topic-editor p-3 rounded-3">
+
+                            {{-- ✅ Progress Action (SEKARANG TAMPIL UNTUK SEMUA TOPIC) --}}
+                            <div class="editor-block mb-3">
+                              <div class="fw-semibold d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">
+                                <div class="d-flex align-items-center gap-2">
+                                  <i class="bi bi-check2-square" style="color:var(--brand-primary)"></i>
+                                  <span>Progress Action</span>
+                                </div>
+
+                                <span class="badge rounded-pill text-bg-light">
+                                  <i class="bi bi-flag me-1"></i>
+                                  {{ $statusLabel }}
+                                </span>
+                              </div>
+
+                              <div class="p-3 rounded-3 border bg-white">
+                                <div class="small text-muted mb-2">
+                                  @if(in_array($delivery, ['live','hybrid'], true))
+                                    Karena delivery <b class="text-uppercase">{{ $delivery }}</b>, progress bisa di-mark manual (start/done/reset).
+                                  @else
+                                    Untuk topic <b class="text-uppercase">{{ $delivery }}</b>, progress topic tetap bisa di-mark manual (start/done/reset).
+                                    @if($hasVideo)
+                                      <span class="d-block mt-1">
+                                        Video progress terpisah (material/video tracking).
+                                      </span>
+                                    @endif
+                                  @endif
+                                </div>
+
+                                @if($hasMarkRoute)
+                                  <div class="d-flex flex-wrap gap-2">
+                                    <form method="POST" action="{{ route('student.topics.mark', $topic) }}">
+                                      @csrf
+                                      <input type="hidden" name="action" value="start">
+                                      <button class="btn btn-sm btn-outline-secondary" type="submit">
+                                        <i class="bi bi-play me-1"></i> Start
+                                      </button>
+                                    </form>
+
+                                    <form method="POST" action="{{ route('student.topics.mark', $topic) }}">
+                                      @csrf
+                                      <input type="hidden" name="action" value="done">
+                                      <button class="btn btn-sm btn-brand" type="submit">
+                                        <i class="bi bi-check2-circle me-1"></i> Mark done
+                                      </button>
+                                    </form>
+
+                                    <form method="POST" action="{{ route('student.topics.mark', $topic) }}">
+                                      @csrf
+                                      <input type="hidden" name="action" value="reset">
+                                      <button class="btn btn-sm btn-outline-danger" type="submit">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i> Reset
+                                      </button>
+                                    </form>
+                                  </div>
+                                @else
+                                  <div class="alert alert-warning small mb-0">
+                                    Route <code>student.topics.mark</code> belum ada. Tombol action otomatis disembunyikan.
+                                  </div>
+                                @endif
+                              </div>
+                            </div>
 
                             {{-- Outline --}}
                             <div class="editor-block mb-3">
@@ -264,9 +369,18 @@
 
                             {{-- Video --}}
                             <div class="editor-block mb-3">
-                              <div class="fw-semibold d-flex align-items-center gap-2 mb-2">
-                                <i class="bi bi-play-btn" style="color:var(--brand-primary)"></i>
-                                <span>Video</span>
+                              <div class="fw-semibold d-flex align-items-center justify-content-between gap-2 mb-2 flex-wrap">
+                                <div class="d-flex align-items-center gap-2">
+                                  <i class="bi bi-play-btn" style="color:var(--brand-primary)"></i>
+                                  <span>Video</span>
+                                </div>
+
+                                @if($hasVideo)
+                                  <div class="small text-muted d-flex align-items-center gap-2">
+                                    <i class="bi bi-bar-chart-line"></i>
+                                    <span>Progress: <b>{{ $videoPct }}%</b></span>
+                                  </div>
+                                @endif
                               </div>
 
                               <div class="p-3 rounded-3"
@@ -295,6 +409,21 @@
                                       </div>
                                     </div>
                                   </a>
+
+                                  {{-- Progress bar video (UI only) --}}
+                                  <div class="mt-2">
+                                    <div class="progress" style="height:8px;">
+                                      <div class="progress-bar" role="progressbar" style="width: {{ $videoPct }}%"></div>
+                                    </div>
+                                    <div class="d-flex justify-content-between small text-muted mt-1">
+                                      <span>Watched</span>
+                                      <span>{{ $videoPct }}%</span>
+                                    </div>
+                                    <div class="small text-muted mt-2">
+                                      <i class="bi bi-info-circle me-1"></i>
+                                      Tracking otomatis butuh event progress dari player (kalau masih Drive iframe, biasanya semi-manual).
+                                    </div>
+                                  </div>
                                 @else
                                   <div class="small text-muted">
                                     Belum ada video untuk topic ini.
@@ -312,25 +441,36 @@
 
                               <div class="list-group list-group-flush">
                                 @forelse($files as $material)
+                                  @php
+                                    $fileUrl = method_exists($material,'fileUrl') ? $material->fileUrl() : null;
+                                  @endphp
+
                                   <div class="list-group-item d-flex justify-content-between align-items-center">
                                     <div class="d-flex align-items-center gap-2">
                                       <i class="bi bi-file-earmark-text"></i>
                                       <div>
                                         <div class="fw-semibold">{{ $material->title }}</div>
                                         <div class="small text-muted">
-                                          <a href="{{ method_exists($material,'fileUrl') ? $material->fileUrl() : '#' }}"
-                                             target="_blank">
-                                            Open file
-                                          </a>
+                                          @if($fileUrl)
+                                            <a href="{{ $fileUrl }}" target="_blank">Open file</a>
+                                          @else
+                                            <span class="text-muted">File belum tersedia</span>
+                                          @endif
                                         </div>
                                       </div>
                                     </div>
 
-                                    <a class="btn btn-sm btn-outline-secondary"
-                                       href="{{ method_exists($material,'fileUrl') ? $material->fileUrl() : '#' }}"
-                                       target="_blank">
-                                      <i class="bi bi-download me-1"></i> Open
-                                    </a>
+                                    @if($fileUrl)
+                                      <a class="btn btn-sm btn-outline-secondary"
+                                         href="{{ $fileUrl }}"
+                                         target="_blank">
+                                        <i class="bi bi-download me-1"></i> Open
+                                      </a>
+                                    @else
+                                      <button class="btn btn-sm btn-outline-secondary" type="button" disabled>
+                                        <i class="bi bi-download me-1"></i> Open
+                                      </button>
+                                    @endif
                                   </div>
                                 @empty
                                   <div class="list-group-item text-muted small">
@@ -482,7 +622,6 @@
       flex:0 0 auto;
     }
     .topic-editor{ background: #fafafa; border:1px solid rgba(0,0,0,.08); }
-    .quill-editor{ min-height: 180px; background: #fff; }
 
     /* clickable video row feel */
     .video-open{ border-radius:.75rem; padding:.25rem .5rem; display:block; }

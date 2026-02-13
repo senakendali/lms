@@ -144,7 +144,7 @@
                  data-bs-parent="#modulesAcc">
               <div class="accordion-body p-3">
 
-                {{-- ✅ Add Topic (FULL PATCH: tambah Delivery Type) --}}
+                {{-- Add Topic --}}
                 <form method="POST" action="{{ route('instructor.topics.store') }}"
                       class="row g-2 align-items-end mb-3">
                   @csrf
@@ -185,28 +185,67 @@
                       $hasVideo = !!$video;
                       $fileCount = $files->count();
 
-                      $videoPreviewUrl = $video?->drive_id ? "https://drive.google.com/file/d/{$video->drive_id}/preview" : null;
-                      $videoOpenUrl = $video?->drive_id ? "https://drive.google.com/file/d/{$video->drive_id}/view" : null;
+                      $delivery = $topic->delivery_type ?? 'video';
+
+                      // Delivery badge
+                      $deliveryLabel = 'Video';
+                      $deliveryIcon = 'bi-play-circle';
+                      if($delivery === 'live'){
+                        $deliveryLabel = 'Live Session';
+                        $deliveryIcon = 'bi-broadcast';
+                      } elseif($delivery === 'hybrid'){
+                        $deliveryLabel = 'Hybrid';
+                        $deliveryIcon = 'bi-intersect';
+                      }
+
+                      // VIDEO SOURCE DETECTION
+                      $videoSource = 'local'; // local|drive
+                      $driveId = null;
+
+                      if($video){
+                        $driveId = $video->drive_id ?? null;
+
+                        if(!empty($driveId)){
+                          $videoSource = 'drive';
+                        } else {
+                          // kalau url drive juga dianggap drive
+                          $u = (string)($video->url ?? '');
+                          if(str_contains($u, 'drive.google.com')){
+                            $videoSource = 'drive';
+                          }
+                        }
+                      }
+
+                      // VIDEO URL
+                      $videoUrl = null;
+                      if($video){
+                        if($videoSource === 'drive'){
+                          // kalau ada drive_id -> pakai preview
+                          if(!empty($driveId)){
+                            $videoUrl = "https://drive.google.com/file/d/{$driveId}/preview";
+                          } else {
+                            // fallback ke url kalau user tempel link drive
+                            $videoUrl = $video->url ?: null;
+                          }
+                        } else {
+                          // local/url biasa
+                          if(!empty($video->url)){
+                            $videoUrl = $video->url;
+                          } elseif(!empty($video->file_path)){
+                            $videoUrl = \Illuminate\Support\Facades\Storage::url($video->file_path);
+                          }
+                        }
+                      }
 
                       $outlineHasContent = !empty(trim(strip_tags((string)$subpoints)));
                       $outlineInitial = old('subtopics', $subpoints);
 
-                      // ✅ assignments
                       $assignments = $topic->assignments ?? collect();
                       $assignmentCount = method_exists($assignments, 'count') ? $assignments->count() : 0;
 
-                      // ✅ delivery type badge
-                      $delivery = $topic->delivery_type ?? 'video';
-                      $deliveryLabel = match($delivery) {
-                        'live' => 'Live Session',
-                        'hybrid' => 'Hybrid',
-                        default => 'Video',
-                      };
-                      $deliveryIcon = match($delivery) {
-                        'live' => 'bi-broadcast',
-                        'hybrid' => 'bi-intersect',
-                        default => 'bi-play-circle',
-                      };
+                      // default input mode for Materi Utama
+                      // Video -> local, Hybrid -> drive
+                      $defaultMainVideoMode = ($delivery === 'hybrid') ? 'drive' : 'local';
                     @endphp
 
                     <div class="card topic-card">
@@ -224,7 +263,7 @@
                                 <div class="fw-semibold d-flex align-items-center gap-2 flex-wrap">
                                   <span>{{ $topic->title }}</span>
 
-                                  {{-- ✅ Delivery badge --}}
+                                  {{-- Delivery badge --}}
                                   <span class="badge rounded-pill text-bg-light d-inline-flex align-items-center gap-1">
                                     <i class="bi {{ $deliveryIcon }} text-secondary"></i>
                                     <span>{{ $deliveryLabel }}</span>
@@ -241,13 +280,13 @@
                                     @endif
                                   </span>
 
-                                  {{-- Video badge (buat Live: tetap tampil tapi muted) --}}
+                                  {{-- Video badge --}}
                                   <span class="badge rounded-pill text-bg-light d-inline-flex align-items-center gap-1">
                                     @if(($delivery ?? 'video') === 'live')
                                       <i class="bi bi-dash-circle text-muted"></i>
                                       <span>Video (optional)</span>
                                     @else
-                                      @if($hasVideo)
+                                      @if($hasVideo && $videoUrl)
                                         <i class="bi bi-play-circle text-primary"></i>
                                         <span>Video</span>
                                       @else
@@ -363,7 +402,6 @@
                                 @csrf
                                 @method('PUT')
 
-                                {{-- keep existing title + delivery type supaya update outline gak “nge-reset” --}}
                                 <input type="hidden" name="title" value="{{ $topic->title }}">
                                 <input type="hidden" name="delivery_type" value="{{ $topic->delivery_type ?? 'video' }}">
 
@@ -372,7 +410,6 @@
                                        class="js-outline-input"
                                        value="{{ $outlineInitial }}">
 
-                                {{-- VIEW MODE --}}
                                 <div class="outline-view {{ $outlineHasContent ? '' : 'd-none' }}"
                                      data-topic="{{ $topic->id }}">
                                   <div class="outline-view-inner">
@@ -380,7 +417,6 @@
                                   </div>
                                 </div>
 
-                                {{-- EDIT MODE (Quill) --}}
                                 <div class="outline-edit {{ $outlineHasContent ? 'd-none' : '' }}"
                                      data-topic="{{ $topic->id }}">
                                   <div class="quill-wrap"
@@ -401,37 +437,80 @@
                               </form>
                             </div>
 
-                            {{-- 2) VIDEO (✅ FULL PATCH: Live Session gak wajib video, lainnya tetap sama) --}}
+                            {{-- 2) MATERI UTAMA (VIDEO) --}}
                             @if(($topic->delivery_type ?? 'video') !== 'live')
-                              <div class="editor-block mb-3">
+                              <div class="editor-block mb-3"
+                                   data-topic-video-block
+                                   data-delivery="{{ e($delivery) }}"
+                                   data-default-mode="{{ e($defaultMainVideoMode) }}">
                                 <div class="fw-semibold d-flex align-items-center gap-2 mb-2">
                                   <i class="bi bi-play-btn" style="color:var(--brand-primary)"></i>
-                                  <span>Video</span>
+                                  <span>Materi Utama</span>
+
                                   @if(($topic->delivery_type ?? 'video') === 'hybrid')
                                     <span class="badge rounded-pill text-bg-light ms-1">
-                                      <i class="bi bi-intersect me-1"></i> Hybrid
+                                      <i class="bi bi-intersect me-1"></i> Hybrid (default: Drive)
                                     </span>
                                   @endif
                                 </div>
 
                                 <div class="p-3 rounded-3"
                                      style="background:rgba(91,62,142,.06);border:1px solid rgba(91,62,142,.12)">
-                                  @if($video)
-                                    {{-- clickable video row --}}
+
+                                  {{-- MODE SWITCH --}}
+                                  <div class="d-flex flex-wrap gap-3 align-items-center mb-2">
+                                    <div class="small text-muted">Sumber video:</div>
+
+                                    <div class="form-check">
+                                      <input class="form-check-input js-video-mode"
+                                             type="radio"
+                                             name="video_mode_{{ $topic->id }}"
+                                             id="modeLocal-{{ $topic->id }}"
+                                             value="local"
+                                             {{ ($hasVideo ? ($videoSource === 'local') : ($defaultMainVideoMode === 'local')) ? 'checked' : '' }}>
+                                      <label class="form-check-label small" for="modeLocal-{{ $topic->id }}">
+                                        Local / URL
+                                      </label>
+                                    </div>
+
+                                    <div class="form-check">
+                                      <input class="form-check-input js-video-mode"
+                                             type="radio"
+                                             name="video_mode_{{ $topic->id }}"
+                                             id="modeDrive-{{ $topic->id }}"
+                                             value="drive"
+                                             {{ ($hasVideo ? ($videoSource === 'drive') : ($defaultMainVideoMode === 'drive')) ? 'checked' : '' }}>
+                                      <label class="form-check-label small" for="modeDrive-{{ $topic->id }}">
+                                        Google Drive
+                                      </label>
+                                    </div>
+                                  </div>
+
+                                  @if($video && $videoUrl)
+                                    {{-- EXISTING VIDEO --}}
                                     <div class="d-flex justify-content-between align-items-start gap-3">
                                       <a href="#"
                                          class="video-open flex-grow-1 text-decoration-none"
                                          data-bs-toggle="modal"
                                          data-bs-target="#videoPreviewModal"
-                                         data-title="{{ e($video->title) }}"
-                                         data-preview="{{ e($videoPreviewUrl) }}"
-                                         data-open="{{ e($videoOpenUrl) }}">
+                                         data-title="{{ e($video->title ?: $topic->title) }}"
+                                         data-src="{{ e($videoUrl) }}"
+                                         data-kind="{{ $videoSource === 'drive' ? 'drive' : 'video' }}">
                                         <div class="d-flex gap-2 align-items-start">
                                           <i class="bi bi-play-circle mt-1" style="font-size:1.25rem;color:var(--brand-primary)"></i>
                                           <div>
-                                            <div class="fw-semibold text-dark">{{ $video->title }}</div>
+                                            <div class="fw-semibold text-dark">{{ $video->title ?: 'Video' }}</div>
                                             <div class="small text-muted">
-                                              Klik untuk buka video (preview)
+                                              Klik untuk preview ({{ $videoSource === 'drive' ? 'Drive' : 'Local/URL' }})
+                                            </div>
+                                            <div class="small text-muted">
+                                              <code>
+                                                @if($videoSource === 'drive')
+                                                  {{ $video->drive_id ?: ($video->url ?: '-') }}
+                                                @else
+                                                  {{ $video->url ?: ($video->file_path ?: '-') }}
+                                                @endif
+                                              </code>
                                             </div>
                                           </div>
                                         </div>
@@ -445,12 +524,12 @@
                                                 data-id="{{ $video->id }}"
                                                 data-title="{{ e($video->title) }}"
                                                 data-type="{{ $video->type }}"
-                                                data-drive_id="{{ e($video->drive_id) }}"
-                                                data-url="{{ e($video->url) }}">
+                                                data-file_path="{{ e($video->file_path) }}"
+                                                data-url="{{ e($video->url) }}"
+                                                data-drive_id="{{ e($video->drive_id ?? '') }}">
                                           <i class="bi bi-pencil-square"></i>
                                         </button>
 
-                                        {{-- Delete Video --}}
                                         <button type="button"
                                                 class="btn btn-sm btn-outline-danger js-confirm"
                                                 data-bs-title="Hapus video?"
@@ -467,10 +546,13 @@
                                         </form>
                                       </div>
                                     </div>
+
                                   @else
+                                    {{-- ADD VIDEO FORM --}}
                                     <form method="POST"
                                           action="{{ route('instructor.materials.store') }}"
-                                          class="row g-2 align-items-end">
+                                          class="row g-2 align-items-end js-video-create-form"
+                                          data-topic="{{ $topic->id }}">
                                       @csrf
                                       <input type="hidden" name="topic_id" value="{{ $topic->id }}">
                                       <input type="hidden" name="type" value="video">
@@ -481,15 +563,32 @@
                                                placeholder="Misal: Video — {{ $topic->title }}">
                                       </div>
 
-                                      <div class="col-12 col-md-5">
-                                        <label class="form-label small mb-1">Drive File ID</label>
-                                        <input class="form-control form-control-sm" name="drive_id"
-                                               placeholder="1AbC... (ID file Drive)">
+                                      {{-- LOCAL/URL INPUT --}}
+                                      <div class="col-12 col-md-5 js-video-local-wrap">
+                                        <label class="form-label small mb-1">Video URL / Path</label>
+                                        <input class="form-control form-control-sm js-video-local"
+                                               type="text"
+                                               name="video_ref"
+                                               placeholder="videos/intro.mp4 atau /storage/videos/intro.mp4 atau https://domain.com/intro.mp4">
+                                        
+                                      </div>
+
+                                      {{-- DRIVE INPUT --}}
+                                      <div class="col-12 col-md-5 d-none js-video-drive-wrap">
+                                        <label class="form-label small mb-1">Google Drive Link / File ID</label>
+                                        <input class="form-control form-control-sm js-video-drive"
+                                               type="text"
+                                               name="drive_ref"
+                                               placeholder="Paste link Drive atau file id (contoh: 1AbC...xyz)">
+                                        
+
+                                        {{-- fallback: biar controller lama yang cuma nerima video_ref tetap jalan --}}
+                                        <input type="hidden" name="video_ref" class="js-video-ref-mirror" value="">
                                       </div>
 
                                       <div class="col-12 col-md-3">
                                         <button class="btn btn-sm btn-brand w-100">
-                                          <i class="bi bi-save2 me-1"></i> Save Video
+                                          <i class="bi bi-save2 me-1"></i> Save
                                         </button>
                                       </div>
                                     </form>
@@ -517,10 +616,9 @@
                             <div class="editor-block mb-3">
                               <div class="fw-semibold d-flex align-items-center gap-2 mb-2">
                                 <i class="bi bi-paperclip" style="color:var(--brand-primary)"></i>
-                                <span>Files & Links</span>
+                                <span>Supporting Files</span>
                               </div>
 
-                              {{-- Upload multi file --}}
                               <div class="p-3 rounded-3 border mb-3 bg-white">
                                 <form method="POST"
                                       action="{{ route('instructor.materials.store') }}"
@@ -552,7 +650,6 @@
                                 </form>
                               </div>
 
-                              {{-- Existing files --}}
                               <div class="list-group list-group-flush mb-3">
                                 @forelse($files as $material)
                                   <div class="list-group-item d-flex justify-content-between align-items-center">
@@ -574,12 +671,12 @@
                                               data-id="{{ $material->id }}"
                                               data-title="{{ e($material->title) }}"
                                               data-type="{{ $material->type }}"
-                                              data-drive_id="{{ e($material->drive_id) }}"
-                                              data-url="{{ e($material->url) }}">
+                                              data-file_path="{{ e($material->file_path) }}"
+                                              data-url="{{ e($material->url) }}"
+                                              data-drive_id="{{ e($material->drive_id ?? '') }}">
                                         <i class="bi bi-pencil-square"></i>
                                       </button>
 
-                                      {{-- Delete File --}}
                                       <button type="button"
                                               class="btn btn-sm btn-outline-danger js-confirm"
                                               data-bs-title="Hapus file?"
@@ -603,7 +700,7 @@
                                 @endforelse
                               </div>
 
-                              {{-- Links (disembunyikan sesuai kode lu) --}}
+                              {{-- Links (tetap d-none sesuai kode lu) --}}
                               <div class="list-group list-group-flush mb-3 d-none">
                                 @forelse($links as $material)
                                   <div class="list-group-item d-flex justify-content-between align-items-center">
@@ -625,12 +722,12 @@
                                               data-id="{{ $material->id }}"
                                               data-title="{{ e($material->title) }}"
                                               data-type="{{ $material->type }}"
-                                              data-drive_id="{{ e($material->drive_id) }}"
-                                              data-url="{{ e($material->url) }}">
+                                              data-file_path="{{ e($material->file_path) }}"
+                                              data-url="{{ e($material->url) }}"
+                                              data-drive_id="{{ e($material->drive_id ?? '') }}">
                                         <i class="bi bi-pencil-square"></i>
                                       </button>
 
-                                      {{-- Delete Link --}}
                                       <button type="button"
                                               class="btn btn-sm btn-outline-danger js-confirm"
                                               data-bs-title="Hapus link?"
@@ -804,7 +901,7 @@
                                         <button type="button"
                                                 class="btn btn-sm btn-outline-danger js-confirm"
                                                 data-bs-title="Hapus assignment?"
-                                                data-bs-message="Tugas ini akan dihapus. Submission & komentar terkait juga bisa ikut hilang (tergantung aturan DB)."
+                                                data-bs-message="Tugas ini akan dihapus."
                                                 data-form="#delete-assignment-{{ $as->id }}">
                                           <i class="bi bi-trash"></i>
                                         </button>
@@ -853,7 +950,7 @@
 
   {{-- ================= MODALS ================= --}}
 
-  {{-- Video Preview Modal --}}
+  {{-- Video Preview Modal (LOCAL/URL + DRIVE) --}}
   <div class="modal fade" id="videoPreviewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" id="videoPreviewDialog">
       <div class="modal-content video-modal">
@@ -864,7 +961,7 @@
             </span>
             <div class="lh-sm">
               <div class="video-modal-title" id="videoPreviewTitle">Video</div>
-              <div class="video-modal-subtitle">Preview Video</div>
+              <div class="video-modal-subtitle" id="videoPreviewSubtitle">Preview Video</div>
             </div>
           </div>
 
@@ -885,19 +982,29 @@
 
         <div class="modal-body p-0">
           <div class="video-modal-body">
-            <div class="ratio ratio-16x9 bg-black">
-              <iframe id="videoPreviewFrame"
+            <div class="p-3 bg-black">
+
+              {{-- HTML5 VIDEO --}}
+              <video id="videoPreviewPlayer"
+                     class="d-none"
+                     controls
+                     playsinline
+                     style="width:100%;max-height:70vh;border-radius:.75rem;background:#000">
+                <source id="videoPreviewSource" src="" type="video/mp4">
+              </video>
+
+              {{-- DRIVE IFRAME --}}
+              <iframe id="drivePreviewFrame"
+                      class="d-none"
                       src=""
+                      style="width:100%;height:70vh;border-radius:.75rem;border:0;background:#000"
                       allow="autoplay; encrypted-media"
-                      allowfullscreen
-                      referrerpolicy="no-referrer"
-                      style="border:0"></iframe>
+                      allowfullscreen></iframe>
             </div>
 
-            <div class="video-modal-hint">
+            <div class="video-modal-hint" id="videoModalHint">
               <i class="bi bi-info-circle me-1"></i>
-              Jika video tidak tampil, pastikan pengaturan akses sudah disetel ke
-              <b>“Siapa pun yang memiliki link dapat melihat / Anyone with the link can view”</b>
+              Video bisa berasal dari <code>/storage/videos</code>, URL, atau Google Drive.
             </div>
           </div>
         </div>
@@ -968,7 +1075,7 @@
     </div>
   </div>
 
-  {{-- ✅ Edit Topic Modal (FULL PATCH: tambah Delivery Type) --}}
+  {{-- Edit Topic Modal --}}
   <div class="modal fade" id="editTopicModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
       <form method="POST" class="modal-content" id="editTopicForm">
@@ -989,7 +1096,7 @@
               <option value="hybrid">Hybrid</option>
             </select>
             <div class="small text-muted mt-1">
-              Live = tanpa video wajib. Hybrid = boleh video + sesi live.
+              Live = tanpa video wajib. Hybrid = default Drive (tapi bisa switch ke Local).
             </div>
           </div>
         </div>
@@ -1004,7 +1111,7 @@
   {{-- Edit Material Modal --}}
   <div class="modal fade" id="editMaterialModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
-      <form method="POST" class="modal-content" id="editMaterialForm" enctype="multipart/form-data">
+      <form method="POST" class="modal-content" id="editMaterialForm">
         @csrf @method('PUT')
         <div class="modal-header">
           <h5 class="modal-title">Edit Resource</h5>
@@ -1019,27 +1126,58 @@
           <div class="mb-2">
             <label class="form-label">Type</label>
             <select class="form-select" name="type" id="editMaterialType">
-              <option value="video">Video (Drive)</option>
+              <option value="video">Video</option>
               <option value="file">File</option>
               <option value="link">Link</option>
             </select>
           </div>
 
-          <div class="mb-2" id="editMaterialDriveWrap">
-            <label class="form-label">Drive File ID</label>
-            <input class="form-control" name="drive_id" id="editMaterialDriveId">
+          {{-- VIDEO MODE --}}
+          <div class="mb-2 d-none" id="editMaterialVideoWrap">
+            <label class="form-label">Video Source</label>
+
+            <div class="d-flex gap-3 flex-wrap align-items-center">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="video_source" id="editVideoLocal" value="local" checked>
+                <label class="form-check-label" for="editVideoLocal">Local / URL</label>
+              </div>
+
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="video_source" id="editVideoDrive" value="drive">
+                <label class="form-check-label" for="editVideoDrive">Google Drive</label>
+              </div>
+            </div>
+
+            <div class="mt-2" id="editVideoLocalWrap">
+              <label class="form-label">Video URL / Path</label>
+              <input class="form-control" type="text" name="video_ref" id="editMaterialVideoRef"
+                     placeholder="videos/intro.mp4 atau /storage/videos/intro.mp4 atau https://...">
+            </div>
+
+            <div class="mt-2 d-none" id="editVideoDriveWrap">
+              <label class="form-label">Google Drive Link / File ID</label>
+              <input class="form-control" type="text" name="drive_ref" id="editMaterialDriveRef"
+                     placeholder="Paste link Drive atau file id (contoh: 1AbC...xyz)">
+              <input type="hidden" name="video_ref" id="editVideoRefMirror" value="">
+            </div>
+
+            <input type="hidden" name="drive_id" id="editMaterialDriveId" value="">
           </div>
 
+          {{-- FILE --}}
           <div class="mb-2 d-none" id="editMaterialFileWrap">
             <label class="form-label">Replace File (optional)</label>
             <input class="form-control" type="file" name="file">
             <div class="small text-muted mt-1">Kosongkan jika tidak ingin mengganti file.</div>
           </div>
 
+          {{-- LINK --}}
           <div class="mb-2 d-none" id="editMaterialUrlWrap">
             <label class="form-label">URL</label>
             <input class="form-control" name="url" id="editMaterialUrl">
           </div>
+
+          <input type="hidden" name="file_path" id="editMaterialFilePath">
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
@@ -1120,20 +1258,8 @@
     .topic-editor{ background: #fafafa; border:1px solid rgba(0,0,0,.08); }
     .topic-actions .btn{ min-width: 36px; }
     .quill-editor{ min-height: 180px; background: #fff; }
-    .quill-wrap .ql-toolbar{
-      border-radius: .5rem .5rem 0 0;
-      border-color: rgba(0,0,0,.12);
-      background: #fff;
-    }
-    .quill-wrap .ql-container{
-      border-radius: 0 0 .5rem .5rem;
-      border-color: rgba(0,0,0,.12);
-      background: #fff;
-      font-size: .95rem;
-    }
-    .ql-editor{ padding: .75rem; }
 
-    .video-open{ border-radius:.75rem; padding:.25rem .5rem; }
+    .video-open{ border-radius:.75rem; padding:.25rem .5rem; display:block; }
     .video-open:hover{ background:rgba(0,0,0,.035); }
 
     .outline-view{
@@ -1148,13 +1274,6 @@
       font-size:.95rem;
       line-height:1.55;
     }
-    .outline-view-inner p{ margin:0 0 .6rem; }
-    .outline-view-inner ul,
-    .outline-view-inner ol{
-      margin:.25rem 0 .6rem 1.1rem;
-      padding:0;
-    }
-    .outline-view-inner li{ margin:.15rem 0; }
 
     .video-modal{
       border: 1px solid rgba(0,0,0,.08);
@@ -1172,9 +1291,7 @@
       width: 38px;
       height: 38px;
       border-radius: 12px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
+      display:flex;align-items:center;justify-content:center;
       background: rgba(91,62,142,.14);
       color: var(--brand-primary);
       flex: 0 0 auto;
@@ -1229,26 +1346,6 @@
       height: 100vh;
       border-radius: 0;
     }
-    #videoPreviewDialog.is-fullscreen .ratio{
-      height: calc(100vh - 118px);
-    }
-
-    .assignment-wrap{
-      background: rgba(255,255,255,.7);
-      border: 1px solid rgba(0,0,0,.10);
-    }
-    .assign-icon{
-      width: 34px;
-      height: 34px;
-      border-radius: 12px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      background: rgba(0,0,0,.045);
-      color: var(--brand-primary);
-      flex: 0 0 auto;
-    }
-    .assignment-desc{ white-space: normal; }
   </style>
 
   {{-- PAGE-LEVEL JS --}}
@@ -1272,16 +1369,66 @@
         }, 3500);
       })();
 
-      // Video preview modal binding + fullsize toggle
+      // ---------- VIDEO SOURCE TOGGLER (Materi Utama) ----------
+      function applyVideoMode(topicId, mode){
+        const form = document.querySelector(`.js-video-create-form[data-topic="${topicId}"]`);
+        if(!form) return;
+
+        const localWrap = form.querySelector('.js-video-local-wrap');
+        const driveWrap = form.querySelector('.js-video-drive-wrap');
+        const localInput = form.querySelector('.js-video-local');
+        const driveInput = form.querySelector('.js-video-drive');
+        const mirror = form.querySelector('.js-video-ref-mirror');
+
+        const isDrive = mode === 'drive';
+
+        localWrap?.classList.toggle('d-none', isDrive);
+        driveWrap?.classList.toggle('d-none', !isDrive);
+
+        if(isDrive){
+          // mirror drive_ref -> video_ref agar controller lama tetap bisa nerima
+          if(mirror && driveInput){
+            mirror.value = driveInput.value || '';
+            driveInput.addEventListener('input', () => mirror.value = driveInput.value || '');
+          }
+          if(localInput) localInput.value = '';
+        }else{
+          if(driveInput) driveInput.value = '';
+          if(mirror) mirror.value = '';
+        }
+      }
+
+      // init per topic block: default mode berdasar delivery
+      document.querySelectorAll('[data-topic-video-block]').forEach(block => {
+        const topicId = block.closest('[id^="topic-"]')?.id?.replace('topic-','');
+        if(!topicId) return;
+
+        const radios = block.querySelectorAll(`.js-video-mode[name="video_mode_${topicId}"]`);
+        if(!radios.length) return;
+
+        const checked = block.querySelector(`.js-video-mode[name="video_mode_${topicId}"]:checked`);
+        const mode = checked?.value || block.getAttribute('data-default-mode') || 'local';
+        applyVideoMode(topicId, mode);
+
+        radios.forEach(r => {
+          r.addEventListener('change', () => applyVideoMode(topicId, r.value));
+        });
+      });
+
+      // ---------- VIDEO PREVIEW MODAL (video vs drive iframe) ----------
       (function(){
         const modalEl = document.getElementById('videoPreviewModal');
         if(!modalEl || !hasBootstrap || !bootstrap.Modal) return;
 
         const titleEl = document.getElementById('videoPreviewTitle');
-        const frameEl = document.getElementById('videoPreviewFrame');
+        const subEl = document.getElementById('videoPreviewSubtitle');
         const openBtn = document.getElementById('videoOpenNewTab');
         const fullBtn = document.getElementById('videoToggleFull');
         const dialog = document.getElementById('videoPreviewDialog');
+
+        const player = document.getElementById('videoPreviewPlayer');
+        const source = document.getElementById('videoPreviewSource');
+        const frame = document.getElementById('drivePreviewFrame');
 
         function setFull(on){
           if(!dialog) return;
@@ -1295,15 +1442,13 @@
               icon.classList.toggle('bi-arrows-fullscreen', !isOn);
               icon.classList.toggle('bi-arrows-angle-contract', isOn);
             }
-
-            fullBtn.querySelector('span')?.remove();
             fullBtn.childNodes.forEach(n => { if(n.nodeType === 3) n.remove(); });
             fullBtn.insertAdjacentText('beforeend', isOn ? ' Exit' : ' Full');
           }
+        }
 
-          setTimeout(() => {
-            try{ frameEl?.contentWindow?.postMessage('resize', '*'); }catch(e){}
-          }, 120);
+        function isDriveSrc(src){
+          return !!src && src.includes('drive.google.com');
         }
 
         modalEl.addEventListener('show.bs.modal', (ev) => {
@@ -1311,19 +1456,43 @@
           if(!btn) return;
 
           const title = btn.getAttribute('data-title') || 'Video';
-          const preview = btn.getAttribute('data-preview') || '';
-          const open = btn.getAttribute('data-open') || '#';
+          const src = btn.getAttribute('data-src') || '';
 
           titleEl.textContent = title;
-          frameEl.src = preview;
-          openBtn.href = open;
+          if(openBtn) openBtn.href = src || '#';
+
+          const drive = isDriveSrc(src);
+
+          // toggle mode
+          player?.classList.toggle('d-none', drive);
+          frame?.classList.toggle('d-none', !drive);
+          if(subEl) subEl.textContent = drive ? 'Preview Google Drive' : 'Preview Video';
+
+          if(drive){
+            if(frame) frame.src = src;
+            try{ player?.pause(); }catch(e){}
+            if(source) source.src = '';
+          }else{
+            if(source) source.src = src;
+            if(frame) frame.src = '';
+            if(player){
+              try{
+                player.load();
+                player.currentTime = 0;
+                player.play().catch(() => {});
+              }catch(e){}
+            }
+          }
 
           setFull(false);
         });
 
         modalEl.addEventListener('hidden.bs.modal', () => {
-          frameEl.src = '';
-          openBtn.href = '#';
+          try{ player?.pause(); }catch(e){}
+          if(source) source.src = '';
+          if(frame) frame.src = '';
+          try{ player?.load(); }catch(e){}
+          if(openBtn) openBtn.href = '#';
           setFull(false);
         });
 
@@ -1334,7 +1503,7 @@
         });
       })();
 
-      // Bootstrap Confirm (global)
+      // Bootstrap Confirm
       (function(){
         const modalEl = document.getElementById('confirmModal');
         if(!modalEl) return;
@@ -1419,7 +1588,7 @@
         document.getElementById('editModuleForm').action = `{{ url('instructor/modules') }}/${id}`;
       });
 
-      // ✅ Edit Topic modal bind (FULL PATCH: title + delivery type)
+      // Edit Topic modal bind
       const editTopicModal = document.getElementById('editTopicModal');
       editTopicModal?.addEventListener('show.bs.modal', (ev) => {
         const btn = ev.relatedTarget;
@@ -1456,15 +1625,36 @@
         document.getElementById('editAssignmentPublished').value = isPub;
 
         autoGrow(document.getElementById('editAssignmentDescription'));
-
         document.getElementById('editAssignmentForm').action = `{{ url('instructor/assignments') }}/${id}`;
       });
 
       // Edit Resource modal bind + field toggle
       function toggleEditMaterialFields(type) {
-        document.getElementById('editMaterialDriveWrap')?.classList.toggle('d-none', type !== 'video');
-        document.getElementById('editMaterialFileWrap')?.classList.toggle('d-none', type !== 'file');
-        document.getElementById('editMaterialUrlWrap')?.classList.toggle('d-none', type !== 'link');
+        const v = document.getElementById('editMaterialVideoWrap');
+        const f = document.getElementById('editMaterialFileWrap');
+        const u = document.getElementById('editMaterialUrlWrap');
+
+        v?.classList.toggle('d-none', type !== 'video');
+        f?.classList.toggle('d-none', type !== 'file');
+        u?.classList.toggle('d-none', type !== 'link');
+      }
+
+      function setEditVideoSource(source){
+        const local = document.getElementById('editVideoLocalWrap');
+        const drive = document.getElementById('editVideoDriveWrap');
+        const mirror = document.getElementById('editVideoRefMirror');
+        const driveRef = document.getElementById('editMaterialDriveRef');
+
+        const isDrive = source === 'drive';
+        local?.classList.toggle('d-none', isDrive);
+        drive?.classList.toggle('d-none', !isDrive);
+
+        if(isDrive && mirror && driveRef){
+          mirror.value = driveRef.value || '';
+          driveRef.addEventListener('input', () => mirror.value = driveRef.value || '');
+        }else{
+          if(mirror) mirror.value = '';
+        }
       }
 
       const editMaterialModal = document.getElementById('editMaterialModal');
@@ -1475,21 +1665,39 @@
         const id = btn.getAttribute('data-id');
         const title = btn.getAttribute('data-title') || '';
         const type = btn.getAttribute('data-type') || 'file';
-        const driveId = btn.getAttribute('data-drive_id') || '';
+        const filePath = btn.getAttribute('data-file_path') || '';
         const url = btn.getAttribute('data-url') || '';
+        const driveId = btn.getAttribute('data-drive_id') || '';
 
         document.getElementById('editMaterialTitle').value = title;
         document.getElementById('editMaterialType').value = type;
-        document.getElementById('editMaterialDriveId').value = driveId;
+        document.getElementById('editMaterialFilePath').value = filePath;
         document.getElementById('editMaterialUrl').value = url;
+        document.getElementById('editMaterialDriveId').value = driveId;
 
         toggleEditMaterialFields(type);
         document.getElementById('editMaterialForm').action = `{{ url('instructor/materials') }}/${id}`;
+
+        if(type === 'video'){
+          // auto-detect drive
+          const isDrive = !!driveId || (url && url.includes('drive.google.com'));
+
+          document.getElementById('editVideoLocal').checked = !isDrive;
+          document.getElementById('editVideoDrive').checked = isDrive;
+
+          document.getElementById('editMaterialVideoRef').value = isDrive ? '' : (url || filePath || '');
+          document.getElementById('editMaterialDriveRef').value = isDrive ? (driveId || url || '') : '';
+
+          setEditVideoSource(isDrive ? 'drive' : 'local');
+        }
       });
 
       document.getElementById('editMaterialType')?.addEventListener('change', (e) => {
         toggleEditMaterialFields(e.target.value);
       });
+
+      document.getElementById('editVideoLocal')?.addEventListener('change', () => setEditVideoSource('local'));
+      document.getElementById('editVideoDrive')?.addEventListener('change', () => setEditVideoSource('drive'));
 
       // Quill init (tetap sama)
       const QUILL_INSTANCES = new Map();
@@ -1567,7 +1775,7 @@
         });
       });
 
-      // OUTLINE: View -> Edit toggle + Cancel (tetap sama)
+      // OUTLINE toggle
       (function(){
         function qs(sel, root=document){ return root.querySelector(sel); }
 
