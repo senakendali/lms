@@ -12,6 +12,7 @@ class Topic extends Model
         'title',
         'order',
         'delivery_type',
+        'subtopics',
         'pass_progress_pct',
         'session_at',
     ];

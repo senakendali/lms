@@ -1,6 +1,11 @@
 {{-- resources/views/instructor/courses/materials.blade.php --}}
 
 <x-app-layout>
+  @php
+    // amanin null
+    $modules = $course->modules ?? collect();
+  @endphp
+
   {{-- Header --}}
   <div class="d-flex justify-content-between align-items-start mb-3">
     <div>
@@ -28,19 +33,22 @@
   </div>
 
   {{-- Flash (auto dismiss) --}}
-  @if(session('status'))
-    <div class="alert alert-success alert-dismissible fade show py-2 small rounded-3 js-flash" role="alert">
-      <i class="bi bi-check-circle me-1"></i> {{ session('status') }}
-    </div>
-  @endif
+  <div id="flashArea">
+    @if(session('status'))
+      <div class="alert alert-success alert-dismissible fade show py-2 small rounded-3 js-flash" role="alert">
+        <i class="bi bi-check-circle me-1"></i> {{ session('status') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    @endif
 
-  @if($errors->any())
-    <div class="alert alert-danger alert-dismissible fade show py-2 small rounded-3 js-flash" role="alert">
-      <i class="bi bi-exclamation-triangle me-1"></i>
-      {{ $errors->first() }}
-      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    </div>
-  @endif
+    @if($errors->any())
+      <div class="alert alert-danger alert-dismissible fade show py-2 small rounded-3 js-flash" role="alert">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        {{ $errors->first() }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    @endif
+  </div>
 
   {{-- Add Module --}}
   <div class="card mb-3">
@@ -52,16 +60,23 @@
         <div class="row g-2 align-items-end">
           <div class="col-12 col-lg-4">
             <label class="form-label small mb-1">Module Title</label>
-            <input class="form-control" name="title" placeholder="Misal: Week 1 — Introduction">
+            <input class="form-control"
+                   name="title"
+                   value="{{ old('title') }}"
+                   placeholder="Misal: Week 1 — Introduction">
           </div>
 
+          {{-- ✅ PATCH: learning objective jadi textarea + autogrow --}}
           <div class="col-12 col-lg-6">
             <label class="form-label small mb-1">Learning Objective</label>
-            <input class="form-control" name="learning_objectives" placeholder="Tulis objective singkat">
+            <textarea class="form-control js-autogrow"
+                      name="learning_objectives"
+                      rows="2"
+                      placeholder="Tulis objective singkat (boleh bullet)...">{{ old('learning_objectives') }}</textarea>
           </div>
 
           <div class="col-12 col-lg-2">
-            <button class="btn btn-brand w-100">
+            <button class="btn btn-brand w-100" type="submit">
               <i class="bi bi-plus-lg me-1"></i> Add Module
             </button>
           </div>
@@ -72,7 +87,7 @@
 
   {{-- Modules --}}
   <div class="accordion" id="modulesAcc">
-    @forelse($course->modules as $module)
+    @forelse($modules as $module)
       @php $moduleKey = 'm'.$module->id; @endphp
 
       <div class="accordion-item mb-3 border-0">
@@ -165,7 +180,7 @@
                   </div>
 
                   <div class="col-12 col-lg-2">
-                    <button class="btn btn-outline-secondary w-100">
+                    <button class="btn btn-outline-secondary w-100" type="submit">
                       <i class="bi bi-plus-lg me-1"></i> Add Topic
                     </button>
                   </div>
@@ -208,7 +223,6 @@
                         if(!empty($driveId)){
                           $videoSource = 'drive';
                         } else {
-                          // kalau url drive juga dianggap drive
                           $u = (string)($video->url ?? '');
                           if(str_contains($u, 'drive.google.com')){
                             $videoSource = 'drive';
@@ -220,15 +234,12 @@
                       $videoUrl = null;
                       if($video){
                         if($videoSource === 'drive'){
-                          // kalau ada drive_id -> pakai preview
                           if(!empty($driveId)){
                             $videoUrl = "https://drive.google.com/file/d/{$driveId}/preview";
                           } else {
-                            // fallback ke url kalau user tempel link drive
                             $videoUrl = $video->url ?: null;
                           }
                         } else {
-                          // local/url biasa
                           if(!empty($video->url)){
                             $videoUrl = $video->url;
                           } elseif(!empty($video->file_path)){
@@ -243,8 +254,6 @@
                       $assignments = $topic->assignments ?? collect();
                       $assignmentCount = method_exists($assignments, 'count') ? $assignments->count() : 0;
 
-                      // default input mode for Materi Utama
-                      // Video -> local, Hybrid -> drive
                       $defaultMainVideoMode = ($delivery === 'hybrid') ? 'drive' : 'local';
                     @endphp
 
@@ -568,9 +577,8 @@
                                         <label class="form-label small mb-1">Video URL / Path</label>
                                         <input class="form-control form-control-sm js-video-local"
                                                type="text"
-                                               name="video_ref"
+                                               name="video_url"
                                                placeholder="videos/intro.mp4 atau /storage/videos/intro.mp4 atau https://domain.com/intro.mp4">
-                                        
                                       </div>
 
                                       {{-- DRIVE INPUT --}}
@@ -578,16 +586,15 @@
                                         <label class="form-label small mb-1">Google Drive Link / File ID</label>
                                         <input class="form-control form-control-sm js-video-drive"
                                                type="text"
-                                               name="drive_ref"
+                                               name="drive_id"
                                                placeholder="Paste link Drive atau file id (contoh: 1AbC...xyz)">
-                                        
 
-                                        {{-- fallback: biar controller lama yang cuma nerima video_ref tetap jalan --}}
-                                        <input type="hidden" name="video_ref" class="js-video-ref-mirror" value="">
+                                        {{-- optional raw mirror --}}
+                                        <input type="hidden" name="video_url" class="js-video-url-mirror" value="">
                                       </div>
 
                                       <div class="col-12 col-md-3">
-                                        <button class="btn btn-sm btn-brand w-100">
+                                        <button class="btn btn-sm btn-brand w-100" type="submit">
                                           <i class="bi bi-save2 me-1"></i> Save
                                         </button>
                                       </div>
@@ -643,7 +650,7 @@
                                   </div>
 
                                   <div class="col-12 col-md-3">
-                                    <button class="btn btn-sm btn-brand w-100">
+                                    <button class="btn btn-sm btn-brand w-100" type="submit">
                                       <i class="bi bi-upload me-1"></i> Upload
                                     </button>
                                   </div>
@@ -769,7 +776,7 @@
                                 </div>
 
                                 <div class="col-12 col-md-3">
-                                  <button class="btn btn-sm btn-outline-secondary w-100">
+                                  <button class="btn btn-sm btn-outline-secondary w-100" type="submit">
                                     <i class="bi bi-plus-lg me-1"></i> Add Link
                                   </button>
                                 </div>
@@ -815,7 +822,7 @@
                                   </div>
 
                                   <div class="col-12 col-lg-2">
-                                    <button class="btn btn-sm btn-brand w-100">
+                                    <button class="btn btn-sm btn-brand w-100" type="submit">
                                       <i class="bi bi-plus-lg me-1"></i> Add
                                     </button>
                                   </div>
@@ -1150,18 +1157,16 @@
 
             <div class="mt-2" id="editVideoLocalWrap">
               <label class="form-label">Video URL / Path</label>
-              <input class="form-control" type="text" name="video_ref" id="editMaterialVideoRef"
+              <input class="form-control" type="text" name="video_url" id="editMaterialVideoUrl"
                      placeholder="videos/intro.mp4 atau /storage/videos/intro.mp4 atau https://...">
             </div>
 
             <div class="mt-2 d-none" id="editVideoDriveWrap">
               <label class="form-label">Google Drive Link / File ID</label>
-              <input class="form-control" type="text" name="drive_ref" id="editMaterialDriveRef"
+              <input class="form-control" type="text" name="drive_id" id="editMaterialDriveIdInput"
                      placeholder="Paste link Drive atau file id (contoh: 1AbC...xyz)">
-              <input type="hidden" name="video_ref" id="editVideoRefMirror" value="">
+              <div class="small text-muted mt-1">Kalau paste link Drive, ID akan diambil otomatis.</div>
             </div>
-
-            <input type="hidden" name="drive_id" id="editMaterialDriveId" value="">
           </div>
 
           {{-- FILE --}}
@@ -1247,6 +1252,7 @@
   <style>
     .accordion-header .btn:focus { box-shadow:none; }
     .module-obj { white-space: pre-line; max-width: 980px; }
+
     .topic-card { border: 1px solid rgba(0,0,0,.08); }
     .topic-icon{
       width:36px;height:36px;border-radius:12px;
@@ -1257,6 +1263,7 @@
     }
     .topic-editor{ background: #fafafa; border:1px solid rgba(0,0,0,.08); }
     .topic-actions .btn{ min-width: 36px; }
+
     .quill-editor{ min-height: 180px; background: #fff; }
 
     .video-open{ border-radius:.75rem; padding:.25rem .5rem; display:block; }
@@ -1274,6 +1281,19 @@
       font-size:.95rem;
       line-height:1.55;
     }
+
+    .assign-icon{
+      width:34px;height:34px;border-radius:12px;
+      display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,.04);
+      color:var(--brand-primary);
+      flex:0 0 auto;
+    }
+    .assignment-wrap{
+      background:#fff;
+      border:1px solid rgba(0,0,0,.08);
+    }
+    .assignment-desc{ white-space: pre-line; }
 
     .video-modal{
       border: 1px solid rgba(0,0,0,.08);
@@ -1351,10 +1371,34 @@
   {{-- PAGE-LEVEL JS --}}
   <script>
     document.addEventListener('DOMContentLoaded', () => {
+      // =========================================================
+      // ✅ PATCH UTAMA:
+      // - Hindarin double-binding event setelah DOM swap (AJAX refresh)
+      // - Delegation untuk event yang nempel ke document (sekali aja)
+      // - Re-init hanya yang butuh scan DOM (autogrow, video mode block, quill)
+      // =========================================================
+      window.__LMS_MATERIALS__ = window.__LMS_MATERIALS__ || {};
+      const STATE = window.__LMS_MATERIALS__;
+
       const hasBootstrap = !!window.bootstrap;
 
+      // ---------- helper: extract Drive file id ----------
+      function extractDriveId(input){
+        const s = (input || '').trim();
+        if(!s) return '';
+        if(!s.includes('http') && !s.includes('/')) return s;
+
+        let m = s.match(/\/file\/d\/([^/]+)/i);
+        if(m && m[1]) return m[1];
+
+        m = s.match(/[?&]id=([^&]+)/i);
+        if(m && m[1]) return m[1];
+
+        return s;
+      }
+
       // Flash auto dismiss
-      (function(){
+      function autoDismissFlash(){
         const alerts = document.querySelectorAll('.js-flash');
         if(!alerts.length) return;
 
@@ -1367,7 +1411,23 @@
             }
           });
         }, 3500);
-      })();
+      }
+
+      // Auto-grow textarea
+      function autoGrow(el){
+        if(!el) return;
+        el.style.height = 'auto';
+        el.style.height = (el.scrollHeight) + 'px';
+      }
+      function initAutogrow(){
+        document.querySelectorAll('.js-autogrow').forEach(el => {
+          // guard biar gak kebanyakan listener walau di-scan ulang
+          if(el.dataset.autogrowBound === '1') return;
+          el.dataset.autogrowBound = '1';
+          autoGrow(el);
+          el.addEventListener('input', () => autoGrow(el));
+        });
+      }
 
       // ---------- VIDEO SOURCE TOGGLER (Materi Utama) ----------
       function applyVideoMode(topicId, mode){
@@ -1376,47 +1436,71 @@
 
         const localWrap = form.querySelector('.js-video-local-wrap');
         const driveWrap = form.querySelector('.js-video-drive-wrap');
-        const localInput = form.querySelector('.js-video-local');
-        const driveInput = form.querySelector('.js-video-drive');
-        const mirror = form.querySelector('.js-video-ref-mirror');
+
+        const localInput = form.querySelector('.js-video-local');       // name=video_url
+        const driveInput = form.querySelector('.js-video-drive');       // name=drive_id
+        const urlMirror  = form.querySelector('.js-video-url-mirror');  // hidden name=video_url (optional)
 
         const isDrive = mode === 'drive';
 
         localWrap?.classList.toggle('d-none', isDrive);
         driveWrap?.classList.toggle('d-none', !isDrive);
 
+        if(localInput) localInput.disabled = isDrive;
+        if(driveInput) driveInput.disabled = !isDrive;
+        if(urlMirror)  urlMirror.disabled  = !isDrive;
+
         if(isDrive){
-          // mirror drive_ref -> video_ref agar controller lama tetap bisa nerima
-          if(mirror && driveInput){
-            mirror.value = driveInput.value || '';
-            driveInput.addEventListener('input', () => mirror.value = driveInput.value || '');
-          }
           if(localInput) localInput.value = '';
+
+          const sync = () => {
+            const raw = (driveInput?.value || '').trim();
+            if(!driveInput) return;
+
+            const id = extractDriveId(raw);
+            driveInput.value = id;
+
+            if(urlMirror) urlMirror.value = raw;
+          };
+
+          if(driveInput){
+            sync();
+            driveInput.oninput = sync;
+            driveInput.onblur = sync;
+          }
         }else{
           if(driveInput) driveInput.value = '';
-          if(mirror) mirror.value = '';
+          if(urlMirror) urlMirror.value = '';
         }
       }
 
-      // init per topic block: default mode berdasar delivery
-      document.querySelectorAll('[data-topic-video-block]').forEach(block => {
-        const topicId = block.closest('[id^="topic-"]')?.id?.replace('topic-','');
-        if(!topicId) return;
+      // init per topic block: default mode
+      function initVideoModeBlocks(){
+        document.querySelectorAll('[data-topic-video-block]').forEach(block => {
+          if(block.dataset.videoBlockBound === '1') return;
+          block.dataset.videoBlockBound = '1';
 
-        const radios = block.querySelectorAll(`.js-video-mode[name="video_mode_${topicId}"]`);
-        if(!radios.length) return;
+          const topicId = block.closest('[id^="topic-"]')?.id?.replace('topic-','');
+          if(!topicId) return;
 
-        const checked = block.querySelector(`.js-video-mode[name="video_mode_${topicId}"]:checked`);
-        const mode = checked?.value || block.getAttribute('data-default-mode') || 'local';
-        applyVideoMode(topicId, mode);
+          const radios = block.querySelectorAll(`.js-video-mode[name="video_mode_${topicId}"]`);
+          if(!radios.length) return;
 
-        radios.forEach(r => {
-          r.addEventListener('change', () => applyVideoMode(topicId, r.value));
+          const checked = block.querySelector(`.js-video-mode[name="video_mode_${topicId}"]:checked`);
+          const mode = checked?.value || block.getAttribute('data-default-mode') || 'local';
+          applyVideoMode(topicId, mode);
+
+          radios.forEach(r => {
+            r.addEventListener('change', () => applyVideoMode(topicId, r.value));
+          });
         });
-      });
+      }
 
-      // ---------- VIDEO PREVIEW MODAL (video vs drive iframe) ----------
-      (function(){
+      // ---------- VIDEO PREVIEW MODAL (bind sekali) ----------
+      function initVideoPreviewModalOnce(){
+        if(STATE.videoPreviewBound) return;
+        STATE.videoPreviewBound = true;
+
         const modalEl = document.getElementById('videoPreviewModal');
         if(!modalEl || !hasBootstrap || !bootstrap.Modal) return;
 
@@ -1442,8 +1526,13 @@
               icon.classList.toggle('bi-arrows-fullscreen', !isOn);
               icon.classList.toggle('bi-arrows-angle-contract', isOn);
             }
+
+            // rapihin label tombol (tanpa numpuk)
+            const txt = isOn ? ' Exit' : ' Full';
+            fullBtn.dataset.label = txt;
+            // reset text nodes
             fullBtn.childNodes.forEach(n => { if(n.nodeType === 3) n.remove(); });
-            fullBtn.insertAdjacentText('beforeend', isOn ? ' Exit' : ' Full');
+            fullBtn.insertAdjacentText('beforeend', txt);
           }
         }
 
@@ -1463,7 +1552,6 @@
 
           const drive = isDriveSrc(src);
 
-          // toggle mode
           player?.classList.toggle('d-none', drive);
           frame?.classList.toggle('d-none', !drive);
           if(subEl) subEl.textContent = drive ? 'Preview Google Drive' : 'Preview Video';
@@ -1501,134 +1589,108 @@
           const isOn = dialog?.classList.contains('is-fullscreen');
           setFull(!isOn);
         });
-      })();
+      }
 
-      // Bootstrap Confirm
-      (function(){
-        const modalEl = document.getElementById('confirmModal');
-        if(!modalEl) return;
+      // ---------- Toggle chevron (delegation, bind sekali) ----------
+      function initTopicChevronOnce(){
+        if(STATE.topicChevronBound) return;
+        STATE.topicChevronBound = true;
 
-        if(!hasBootstrap || !bootstrap.Modal){
-          console.warn('Bootstrap Modal tidak tersedia. Confirm modal dimatikan.');
-          return;
-        }
+        document.addEventListener('show.bs.collapse', (e) => {
+          const target = e.target;
+          if(!target?.id?.startsWith('topic-')) return;
 
-        const modal = new bootstrap.Modal(modalEl);
-        const titleEl = document.getElementById('confirmModalTitle');
-        const msgEl = document.getElementById('confirmModalMessage');
-        const okBtn = document.getElementById('confirmModalOk');
+          const id = target.id;
+          const btn = document.querySelector(`.topic-toggle[data-bs-target="#${id}"]`);
+          if(btn){
+            btn.querySelector('i')?.classList.remove('bi-chevron-down');
+            btn.querySelector('i')?.classList.add('bi-chevron-up');
+          }
+        });
 
-        let targetForm = null;
+        document.addEventListener('hide.bs.collapse', (e) => {
+          const target = e.target;
+          if(!target?.id?.startsWith('topic-')) return;
 
-        document.addEventListener('click', (e) => {
-          const btn = e.target.closest('.js-confirm');
+          const id = target.id;
+          const btn = document.querySelector(`.topic-toggle[data-bs-target="#${id}"]`);
+          if(btn){
+            btn.querySelector('i')?.classList.remove('bi-chevron-up');
+            btn.querySelector('i')?.classList.add('bi-chevron-down');
+          }
+        });
+      }
+
+      // ---------- Modals bind (sekali) ----------
+      function initEditModuleModalOnce(){
+        if(STATE.editModuleBound) return;
+        STATE.editModuleBound = true;
+
+        const editModuleModal = document.getElementById('editModuleModal');
+        editModuleModal?.addEventListener('show.bs.modal', (ev) => {
+          const btn = ev.relatedTarget;
           if(!btn) return;
 
-          titleEl.textContent = btn.getAttribute('data-bs-title') || 'Konfirmasi';
-          msgEl.textContent = btn.getAttribute('data-bs-message') || 'Yakin?';
+          const id = btn.getAttribute('data-id');
+          const title = btn.getAttribute('data-title') || '';
+          const obj = btn.getAttribute('data-objectives') || '';
 
-          const formSel = btn.getAttribute('data-form');
-          targetForm = formSel ? document.querySelector(formSel) : null;
+          document.getElementById('editModuleTitle').value = title;
+          document.getElementById('editModuleObjectives').value = obj;
+          autoGrow(document.getElementById('editModuleObjectives'));
 
-          modal.show();
+          document.getElementById('editModuleForm').action = `{{ url('instructor/modules') }}/${id}`;
         });
-
-        okBtn?.addEventListener('click', () => {
-          if(targetForm) targetForm.submit();
-          modal.hide();
-        });
-
-        modalEl.addEventListener('hidden.bs.modal', () => {
-          targetForm = null;
-        });
-      })();
-
-      // Auto-grow textarea
-      function autoGrow(el){
-        if(!el) return;
-        el.style.height = 'auto';
-        el.style.height = (el.scrollHeight) + 'px';
       }
-      document.querySelectorAll('.js-autogrow').forEach(el => {
-        autoGrow(el);
-        el.addEventListener('input', () => autoGrow(el));
-      });
 
-      // Toggle chevron up/down on topic expand
-      document.querySelectorAll('.topic-toggle').forEach(btn => {
-        const targetSel = btn.getAttribute('data-bs-target');
-        const target = document.querySelector(targetSel);
-        if(!target) return;
+      function initEditTopicModalOnce(){
+        if(STATE.editTopicBound) return;
+        STATE.editTopicBound = true;
 
-        target.addEventListener('show.bs.collapse', () => {
-          btn.querySelector('i')?.classList.remove('bi-chevron-down');
-          btn.querySelector('i')?.classList.add('bi-chevron-up');
+        const editTopicModal = document.getElementById('editTopicModal');
+        editTopicModal?.addEventListener('show.bs.modal', (ev) => {
+          const btn = ev.relatedTarget;
+          if(!btn) return;
+
+          const id = btn.getAttribute('data-id');
+          const title = btn.getAttribute('data-title') || '';
+          const delivery = btn.getAttribute('data-delivery_type') || 'video';
+
+          document.getElementById('editTopicTitle').value = title;
+          const sel = document.getElementById('editTopicDeliveryType');
+          if(sel) sel.value = delivery;
+
+          document.getElementById('editTopicForm').action = `{{ url('instructor/topics') }}/${id}`;
         });
+      }
 
-        target.addEventListener('hide.bs.collapse', () => {
-          btn.querySelector('i')?.classList.remove('bi-chevron-up');
-          btn.querySelector('i')?.classList.add('bi-chevron-down');
+      function initEditAssignmentModalOnce(){
+        if(STATE.editAssignmentBound) return;
+        STATE.editAssignmentBound = true;
+
+        const editAssignmentModal = document.getElementById('editAssignmentModal');
+        editAssignmentModal?.addEventListener('show.bs.modal', (ev) => {
+          const btn = ev.relatedTarget;
+          if(!btn) return;
+
+          const id = btn.getAttribute('data-id');
+          const title = btn.getAttribute('data-title') || '';
+          const desc = btn.getAttribute('data-description') || '';
+          const maxScore = btn.getAttribute('data-max_score') || '100';
+          const dueAt = btn.getAttribute('data-due_at') || '';
+          const isPub = btn.getAttribute('data-is_published') || '0';
+
+          document.getElementById('editAssignmentTitle').value = title;
+          document.getElementById('editAssignmentDescription').value = desc;
+          document.getElementById('editAssignmentMaxScore').value = maxScore;
+          document.getElementById('editAssignmentDueAt').value = dueAt;
+          document.getElementById('editAssignmentPublished').value = isPub;
+
+          autoGrow(document.getElementById('editAssignmentDescription'));
+          document.getElementById('editAssignmentForm').action = `{{ url('instructor/assignments') }}/${id}`;
         });
-      });
+      }
 
-      // Edit Module modal bind
-      const editModuleModal = document.getElementById('editModuleModal');
-      editModuleModal?.addEventListener('show.bs.modal', (ev) => {
-        const btn = ev.relatedTarget;
-        if(!btn) return;
-
-        const id = btn.getAttribute('data-id');
-        const title = btn.getAttribute('data-title') || '';
-        const obj = btn.getAttribute('data-objectives') || '';
-
-        document.getElementById('editModuleTitle').value = title;
-        document.getElementById('editModuleObjectives').value = obj;
-        autoGrow(document.getElementById('editModuleObjectives'));
-
-        document.getElementById('editModuleForm').action = `{{ url('instructor/modules') }}/${id}`;
-      });
-
-      // Edit Topic modal bind
-      const editTopicModal = document.getElementById('editTopicModal');
-      editTopicModal?.addEventListener('show.bs.modal', (ev) => {
-        const btn = ev.relatedTarget;
-        if(!btn) return;
-
-        const id = btn.getAttribute('data-id');
-        const title = btn.getAttribute('data-title') || '';
-        const delivery = btn.getAttribute('data-delivery_type') || 'video';
-
-        document.getElementById('editTopicTitle').value = title;
-        const sel = document.getElementById('editTopicDeliveryType');
-        if(sel) sel.value = delivery;
-
-        document.getElementById('editTopicForm').action = `{{ url('instructor/topics') }}/${id}`;
-      });
-
-      // Edit Assignment modal bind
-      const editAssignmentModal = document.getElementById('editAssignmentModal');
-      editAssignmentModal?.addEventListener('show.bs.modal', (ev) => {
-        const btn = ev.relatedTarget;
-        if(!btn) return;
-
-        const id = btn.getAttribute('data-id');
-        const title = btn.getAttribute('data-title') || '';
-        const desc = btn.getAttribute('data-description') || '';
-        const maxScore = btn.getAttribute('data-max_score') || '100';
-        const dueAt = btn.getAttribute('data-due_at') || '';
-        const isPub = btn.getAttribute('data-is_published') || '0';
-
-        document.getElementById('editAssignmentTitle').value = title;
-        document.getElementById('editAssignmentDescription').value = desc;
-        document.getElementById('editAssignmentMaxScore').value = maxScore;
-        document.getElementById('editAssignmentDueAt').value = dueAt;
-        document.getElementById('editAssignmentPublished').value = isPub;
-
-        autoGrow(document.getElementById('editAssignmentDescription'));
-        document.getElementById('editAssignmentForm').action = `{{ url('instructor/assignments') }}/${id}`;
-      });
-
-      // Edit Resource modal bind + field toggle
       function toggleEditMaterialFields(type) {
         const v = document.getElementById('editMaterialVideoWrap');
         const f = document.getElementById('editMaterialFileWrap');
@@ -1640,67 +1702,83 @@
       }
 
       function setEditVideoSource(source){
-        const local = document.getElementById('editVideoLocalWrap');
-        const drive = document.getElementById('editVideoDriveWrap');
-        const mirror = document.getElementById('editVideoRefMirror');
-        const driveRef = document.getElementById('editMaterialDriveRef');
+        const localWrap = document.getElementById('editVideoLocalWrap');
+        const driveWrap = document.getElementById('editVideoDriveWrap');
+
+        const localInput = document.getElementById('editMaterialVideoUrl');
+        const driveInput = document.getElementById('editMaterialDriveIdInput');
 
         const isDrive = source === 'drive';
-        local?.classList.toggle('d-none', isDrive);
-        drive?.classList.toggle('d-none', !isDrive);
 
-        if(isDrive && mirror && driveRef){
-          mirror.value = driveRef.value || '';
-          driveRef.addEventListener('input', () => mirror.value = driveRef.value || '');
+        localWrap?.classList.toggle('d-none', isDrive);
+        driveWrap?.classList.toggle('d-none', !isDrive);
+
+        if(localInput) localInput.disabled = isDrive;
+        if(driveInput) driveInput.disabled = !isDrive;
+
+        if(isDrive && driveInput){
+          const sync = () => driveInput.value = extractDriveId(driveInput.value || '');
+          sync();
+          driveInput.oninput = sync;
+          driveInput.onblur = sync;
+
+          if(localInput) localInput.value = '';
         }else{
-          if(mirror) mirror.value = '';
+          if(driveInput) driveInput.value = '';
         }
       }
 
-      const editMaterialModal = document.getElementById('editMaterialModal');
-      editMaterialModal?.addEventListener('show.bs.modal', (ev) => {
-        const btn = ev.relatedTarget;
-        if(!btn) return;
+      function initEditMaterialModalOnce(){
+        if(STATE.editMaterialBound) return;
+        STATE.editMaterialBound = true;
 
-        const id = btn.getAttribute('data-id');
-        const title = btn.getAttribute('data-title') || '';
-        const type = btn.getAttribute('data-type') || 'file';
-        const filePath = btn.getAttribute('data-file_path') || '';
-        const url = btn.getAttribute('data-url') || '';
-        const driveId = btn.getAttribute('data-drive_id') || '';
+        const editMaterialModal = document.getElementById('editMaterialModal');
+        editMaterialModal?.addEventListener('show.bs.modal', (ev) => {
+          const btn = ev.relatedTarget;
+          if(!btn) return;
 
-        document.getElementById('editMaterialTitle').value = title;
-        document.getElementById('editMaterialType').value = type;
-        document.getElementById('editMaterialFilePath').value = filePath;
-        document.getElementById('editMaterialUrl').value = url;
-        document.getElementById('editMaterialDriveId').value = driveId;
+          const id = btn.getAttribute('data-id');
+          const title = btn.getAttribute('data-title') || '';
+          const type = btn.getAttribute('data-type') || 'file';
+          const filePath = btn.getAttribute('data-file_path') || '';
+          const url = btn.getAttribute('data-url') || '';
+          const driveId = btn.getAttribute('data-drive_id') || '';
 
-        toggleEditMaterialFields(type);
-        document.getElementById('editMaterialForm').action = `{{ url('instructor/materials') }}/${id}`;
+          document.getElementById('editMaterialTitle').value = title;
+          document.getElementById('editMaterialType').value = type;
+          document.getElementById('editMaterialFilePath').value = filePath;
+          document.getElementById('editMaterialUrl').value = url;
 
-        if(type === 'video'){
-          // auto-detect drive
-          const isDrive = !!driveId || (url && url.includes('drive.google.com'));
+          toggleEditMaterialFields(type);
+          document.getElementById('editMaterialForm').action = `{{ url('instructor/materials') }}/${id}`;
 
-          document.getElementById('editVideoLocal').checked = !isDrive;
-          document.getElementById('editVideoDrive').checked = isDrive;
+          if(type === 'video'){
+            const isDrive = !!driveId || (url && url.includes('drive.google.com'));
 
-          document.getElementById('editMaterialVideoRef').value = isDrive ? '' : (url || filePath || '');
-          document.getElementById('editMaterialDriveRef').value = isDrive ? (driveId || url || '') : '';
+            document.getElementById('editVideoLocal').checked = !isDrive;
+            document.getElementById('editVideoDrive').checked = isDrive;
 
-          setEditVideoSource(isDrive ? 'drive' : 'local');
-        }
-      });
+            const vUrl = document.getElementById('editMaterialVideoUrl');
+            const dInp = document.getElementById('editMaterialDriveIdInput');
 
-      document.getElementById('editMaterialType')?.addEventListener('change', (e) => {
-        toggleEditMaterialFields(e.target.value);
-      });
+            if(vUrl) vUrl.value = isDrive ? '' : (url || filePath || '');
+            if(dInp) dInp.value = isDrive ? (driveId || url || '') : '';
 
-      document.getElementById('editVideoLocal')?.addEventListener('change', () => setEditVideoSource('local'));
-      document.getElementById('editVideoDrive')?.addEventListener('change', () => setEditVideoSource('drive'));
+            setEditVideoSource(isDrive ? 'drive' : 'local');
+          }
+        });
 
-      // Quill init (tetap sama)
-      const QUILL_INSTANCES = new Map();
+        document.getElementById('editMaterialType')?.addEventListener('change', (e) => {
+          toggleEditMaterialFields(e.target.value);
+        });
+
+        document.getElementById('editVideoLocal')?.addEventListener('change', () => setEditVideoSource('local'));
+        document.getElementById('editVideoDrive')?.addEventListener('change', () => setEditVideoSource('drive'));
+      }
+
+      // Quill init
+      const QUILL_INSTANCES = STATE.quillInstances || new Map();
+      STATE.quillInstances = QUILL_INSTANCES;
 
       function decodeHtml(html) {
         if(!html) return '';
@@ -1764,19 +1842,18 @@
 
         form?.addEventListener('submit', () => {
           if(input) input.value = quill.root.innerHTML;
-        });
+        }, { once: true });
       }
 
-      document.querySelectorAll('.quill-wrap').forEach(wrap => initQuillForWrap(wrap));
+      function initQuillAll(){
+        document.querySelectorAll('.quill-wrap').forEach(wrap => initQuillForWrap(wrap));
+      }
 
-      document.querySelectorAll('[id^="topic-"]').forEach(collapseEl => {
-        collapseEl.addEventListener('shown.bs.collapse', () => {
-          collapseEl.querySelectorAll('.quill-wrap').forEach(wrap => initQuillForWrap(wrap));
-        });
-      });
+      // OUTLINE toggle (delegation, bind sekali)
+      function initOutlineToggleOnce(){
+        if(STATE.outlineToggleBound) return;
+        STATE.outlineToggleBound = true;
 
-      // OUTLINE toggle
-      (function(){
         function qs(sel, root=document){ return root.querySelector(sel); }
 
         function showOutlineEdit(topicId){
@@ -1840,7 +1917,222 @@
             return;
           }
         });
-      })();
+      }
+
+      // ============================
+      // ASYNC CRUD (fetch) + DOM refresh
+      // ============================
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || `{{ csrf_token() }}`;
+      let __confirmTargetForm = null;
+
+      function showFlash(type, message){
+        const flashArea = document.getElementById('flashArea');
+        if(!flashArea) return;
+
+        const isOk = (type === 'success');
+        const icon = isOk ? 'bi-check-circle' : 'bi-exclamation-triangle';
+        const cls  = isOk ? 'alert-success' : 'alert-danger';
+
+        flashArea.innerHTML = `
+          <div class="alert ${cls} alert-dismissible fade show py-2 small rounded-3 js-flash" role="alert">
+            <i class="bi ${icon} me-1"></i> ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        `;
+        autoDismissFlash();
+      }
+
+      function setBusy(form, on){
+        form.dataset.busy = on ? '1' : '';
+        const btns = form.querySelectorAll('button, input[type="submit"]');
+        btns.forEach(b => b.disabled = !!on);
+
+        const submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+        if(submitBtn && submitBtn.tagName === 'BUTTON'){
+          if(on){
+            submitBtn.dataset._oldHtml = submitBtn.innerHTML || '';
+            submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Saving...`;
+          }else{
+            if(submitBtn.dataset._oldHtml){
+              submitBtn.innerHTML = submitBtn.dataset._oldHtml;
+              delete submitBtn.dataset._oldHtml;
+            }
+          }
+        }
+      }
+
+      function reInitAfterSwap(){
+        autoDismissFlash();
+        initAutogrow();
+        initVideoModeBlocks();
+        initQuillAll();
+        // yang bind ke document cukup sekali:
+        initTopicChevronOnce();
+        initOutlineToggleOnce();
+        initVideoPreviewModalOnce();
+        initEditModuleModalOnce();
+        initEditTopicModalOnce();
+        initEditMaterialModalOnce();
+        initEditAssignmentModalOnce();
+      }
+
+      async function refreshSectionsFromHtml(htmlText){
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlText, 'text/html');
+
+        const newFlash = doc.querySelector('#flashArea');
+        const newModules = doc.querySelector('#modulesAcc');
+
+        if(newFlash){
+          const flashArea = document.querySelector('#flashArea');
+          if(flashArea) flashArea.replaceWith(newFlash);
+        }
+
+        if(newModules){
+          const modulesAcc = document.querySelector('#modulesAcc');
+          if(modulesAcc) modulesAcc.replaceWith(newModules);
+        }
+
+        // Penting: setelah swap, scan ulang elemen yang baru
+        reInitAfterSwap();
+      }
+
+      async function asyncSubmit(form){
+        if(!form || form.dataset.busy === '1') return;
+
+        const method = (form.getAttribute('method') || 'GET').toUpperCase();
+        if(method === 'GET') return;
+
+        const action = form.getAttribute('action');
+        if(!action) return;
+
+        setBusy(form, true);
+
+        const fd = new FormData(form);
+        if(!fd.get('_token')) fd.append('_token', csrf);
+
+        try{
+          const res = await fetch(action, {
+            method: 'POST',
+            headers: {
+              'X-Requested-With': 'XMLHttpRequest',
+              'Accept': 'text/html,application/xhtml+xml'
+            },
+            body: fd,
+            credentials: 'same-origin'
+          });
+
+          const html = await res.text();
+          await refreshSectionsFromHtml(html);
+
+          if(!res.ok){
+            showFlash('danger', `Gagal (${res.status}). Cek error di atas.`);
+            return;
+          }
+
+          // close modal if submitted inside modal
+          const modalEl = form.closest('.modal');
+          if(modalEl && window.bootstrap?.Modal){
+            try{
+              const inst = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+              inst.hide();
+            }catch(e){}
+          }
+
+          showFlash('success', 'Saved.');
+
+        } catch (err){
+          console.error(err);
+          showFlash('danger', 'Request gagal. Cek network / session.');
+        } finally {
+          setBusy(form, false);
+        }
+      }
+
+      // Intercept submit all POST forms (PUT/DELETE via _method works) (bind sekali)
+      function initGlobalSubmitOnce(){
+        if(STATE.submitBound) return;
+        STATE.submitBound = true;
+
+        document.addEventListener('submit', (e) => {
+          const form = e.target.closest('form');
+          if(!form) return;
+
+          if(form.hasAttribute('data-no-async')) return;
+
+          const method = (form.getAttribute('method') || 'GET').toUpperCase();
+          if(method === 'GET') return;
+
+          e.preventDefault();
+          asyncSubmit(form);
+        });
+      }
+
+      // Bootstrap Confirm (ASYNC) (bind sekali)
+      function initConfirmModalOnce(){
+        if(STATE.confirmBound) return;
+        STATE.confirmBound = true;
+
+        const modalEl = document.getElementById('confirmModal');
+        if(!modalEl) return;
+
+        if(!hasBootstrap || !bootstrap.Modal){
+          console.warn('Bootstrap Modal tidak tersedia. Confirm modal dimatikan.');
+          return;
+        }
+
+        const modal = new bootstrap.Modal(modalEl);
+        const titleEl = document.getElementById('confirmModalTitle');
+        const msgEl = document.getElementById('confirmModalMessage');
+        const okBtn = document.getElementById('confirmModalOk');
+
+        document.addEventListener('click', (e) => {
+          const btn = e.target.closest('.js-confirm');
+          if(!btn) return;
+
+          titleEl.textContent = btn.getAttribute('data-bs-title') || 'Konfirmasi';
+          msgEl.textContent = btn.getAttribute('data-bs-message') || 'Yakin?';
+
+          const formSel = btn.getAttribute('data-form');
+          __confirmTargetForm = formSel ? document.querySelector(formSel) : null;
+
+          modal.show();
+        });
+
+        okBtn?.addEventListener('click', () => {
+          if(__confirmTargetForm){
+            // trigger submit -> intercepted -> asyncSubmit
+            if(__confirmTargetForm.requestSubmit){
+              __confirmTargetForm.requestSubmit();
+            }else{
+              __confirmTargetForm.dispatchEvent(new Event('submit', { cancelable:true, bubbles:true }));
+            }
+          }
+          modal.hide();
+        });
+
+        modalEl.addEventListener('hidden.bs.modal', () => {
+          __confirmTargetForm = null;
+        });
+      }
+
+      // ========== INIT pertama kali ==========
+      autoDismissFlash();
+      initAutogrow();
+      initVideoModeBlocks();
+      initQuillAll();
+
+      initGlobalSubmitOnce();
+      initConfirmModalOnce();
+
+      initTopicChevronOnce();
+      initOutlineToggleOnce();
+
+      initVideoPreviewModalOnce();
+      initEditModuleModalOnce();
+      initEditTopicModalOnce();
+      initEditMaterialModalOnce();
+      initEditAssignmentModalOnce();
     });
   </script>
 </x-app-layout>

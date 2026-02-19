@@ -51,8 +51,7 @@ class MaterialController extends Controller
             },
         ]);
 
-        // ✅ FIX: sesuai file UI lu
-        // resources/views/instructor/courses/materials.blade.php
+        // ✅ match view lu: resources/views/instructor/courses/materials.blade.php
         return view('instructor.materials.index', compact('course'));
     }
 
@@ -68,11 +67,6 @@ class MaterialController extends Controller
         $course = Course::findOrFail($data['course_id']);
         abort_if($course->instructor_id !== auth()->id(), 403);
 
-        $nextOrder = 1;
-        if (Schema::hasColumn('modules', 'order')) {
-            $nextOrder = (int) (Module::where('course_id', $course->id)->max('order') ?? 0) + 1;
-        }
-
         $payload = [
             'course_id' => $course->id,
             'title'     => $data['title'],
@@ -80,6 +74,7 @@ class MaterialController extends Controller
         ];
 
         if (Schema::hasColumn('modules', 'order')) {
+            $nextOrder = (int) (Module::where('course_id', $course->id)->max('order') ?? 0) + 1;
             $payload['order'] = $nextOrder;
         }
 
@@ -125,6 +120,9 @@ class MaterialController extends Controller
             'delivery_type' => ['nullable', Rule::in(['video', 'live', 'hybrid'])],
         ]);
 
+        $module = Module::with('course')->findOrFail($data['module_id']);
+        abort_if($module->course->instructor_id !== auth()->id(), 403);
+
         $delivery = $data['delivery_type'] ?? 'video';
 
         $payload = [
@@ -145,6 +143,9 @@ class MaterialController extends Controller
 
     public function updateTopic(Request $request, Topic $topic)
     {
+        $topic->load('module.course');
+        abort_if($topic->module->course->instructor_id !== auth()->id(), 403);
+
         $data = $request->validate([
             'title' => ['sometimes', 'required', 'string', 'max:255'],
             'subtopics' => ['nullable', 'string'],
@@ -153,6 +154,21 @@ class MaterialController extends Controller
 
         if (!array_key_exists('delivery_type', $data) || empty($data['delivery_type'])) {
             unset($data['delivery_type']);
+        }
+
+        // ✅ OUTLINE FIELD MAPPING: ikut kolom yang ada di DB
+        if (array_key_exists('subtopics', $data)) {
+            if (Schema::hasColumn('topics', 'subtopics')) {
+                // ok
+            } elseif (Schema::hasColumn('topics', 'focus_points')) {
+                $data['focus_points'] = $data['subtopics'];
+                unset($data['subtopics']);
+            } elseif (Schema::hasColumn('topics', 'subtopic_points')) {
+                $data['subtopic_points'] = $data['subtopics'];
+                unset($data['subtopics']);
+            } else {
+                unset($data['subtopics']);
+            }
         }
 
         $topic->update($data);
@@ -184,23 +200,19 @@ class MaterialController extends Controller
         $input = trim((string) $input);
         if ($input === '') return null;
 
-        // kalau cuma ID (umumnya panjang 10+ dan tanpa spasi)
-        if (!str_contains($input, 'http')) {
-            // basic guard
+        // kalau cuma ID (tanpa http / tanpa slash)
+        if (!str_contains($input, 'http') && !str_contains($input, '/')) {
             return preg_match('/^[a-zA-Z0-9_-]{10,}$/', $input) ? $input : null;
         }
 
-        // file/d/{id}/
         if (preg_match('#/file/d/([^/]+)#', $input, $m)) {
             return $m[1] ?? null;
         }
 
-        // ?id={id}
         if (preg_match('#[?&]id=([^&]+)#', $input, $m)) {
             return $m[1] ?? null;
         }
 
-        // uc?id={id}
         if (preg_match('#/uc\?id=([^&]+)#', $input, $m)) {
             return $m[1] ?? null;
         }
@@ -213,43 +225,77 @@ class MaterialController extends Controller
         return "https://drive.google.com/file/d/{$driveId}/preview";
     }
 
-    private function nextMaterialOrder(int $topicId): int
-    {
-        if (!Schema::hasColumn('materials', 'order')) return 0;
-        return (int) (Material::where('topic_id', $topicId)->max('order') ?? 0) + 1;
-    }
-
     private function normalizeTitle(?string $title, string $fallback): string
     {
         $t = trim((string) $title);
         return $t !== '' ? $t : $fallback;
     }
 
+    /**
+     * ✅ Fix: user input "videos/xxx.mp4" (public/storage/videos)
+     * jadi URL publik "/storage/videos/xxx.mp4"
+     */
+    private function normalizePublicVideoUrl(string $raw): string
+    {
+        $v = trim($raw);
+
+        if ($v === '') return $v;
+
+        // external url
+        if (str_starts_with($v, 'http://') || str_starts_with($v, 'https://')) return $v;
+
+        // already correct
+        if (str_starts_with($v, '/storage/')) return $v;
+
+        // user types: storage/videos/xxx.mp4
+        if (str_starts_with($v, 'storage/')) return '/' . $v;
+
+        // user types: videos/xxx.mp4 -> /storage/videos/xxx.mp4
+        if (str_starts_with($v, 'videos/')) return '/storage/' . $v;
+
+        // user types: /videos/xxx.mp4 -> /storage/videos/xxx.mp4
+        if (str_starts_with($v, '/videos/')) return '/storage' . $v;
+
+        return $v;
+    }
+
+    private function buildMaterialBasePayload(int $topicId, array $data): array
+    {
+        $payload = [
+            'topic_id'  => $topicId,
+            'title'     => $data['title'],
+            'type'      => $data['type'],
+            'drive_id'  => null,
+            'url'       => null,
+            'file_path' => null,
+        ];
+
+        // ✅ only set order if column exists
+        if (Schema::hasColumn('materials', 'order')) {
+            $payload['order'] = (int) (Material::where('topic_id', $topicId)->max('order') ?? 0) + 1;
+        }
+
+        return $payload;
+    }
+
     public function storeMaterial(Request $request)
     {
-        /**
-         * Sesuai UI baru:
-         * - type=video:
-         *    - local => input: video_ref (path / url)
-         *    - drive => input: drive_ref (link / id)
-         * - type=file:
-         *    - upload => input: files[]  (disimpan file_path)
-         *    - optional drive => input: drive_ref
-         * - type=link:
-         *    - url => input: url
-         */
+        // ✅ MATCH UI:
+        // video: title + (video_url OR drive_id)
+        // file: title + files[]
+        // link: title + url
         $data = $request->validate([
             'topic_id'  => ['required', 'exists:topics,id'],
             'title'     => ['nullable', 'string', 'max:160'],
             'type'      => ['required', Rule::in(['video', 'file', 'link'])],
 
             // video
-            'video_ref' => ['nullable', 'string', 'max:2000'],
-            'drive_ref' => ['nullable', 'string', 'max:2000'],
+            'video_url' => ['nullable', 'string', 'max:2000'],
+            'drive_id'  => ['nullable', 'string', 'max:2000'],
 
             // file upload
             'files'     => ['nullable', 'array'],
-            'files.*'   => ['file', 'max:51200'], // 50MB per file, adjust kalau mau
+            'files.*'   => ['file', 'max:51200'], // 50MB
 
             // link
             'url'       => ['nullable', 'string', 'max:2000'],
@@ -258,128 +304,90 @@ class MaterialController extends Controller
         $topic = Topic::with('module.course')->findOrFail($data['topic_id']);
         abort_if($topic->module->course->instructor_id !== auth()->id(), 403);
 
-        // ===== VIDEO =====
-        if ($data['type'] === 'video') {
-            $videoRef = trim((string) ($data['video_ref'] ?? ''));
-            $driveRef = trim((string) ($data['drive_ref'] ?? ''));
+        $type = $data['type'];
 
-            // kalau drive diisi -> simpan drive
-            if ($driveRef !== '') {
-                $driveId = $this->extractDriveId($driveRef);
+        // ===== VIDEO =====
+        if ($type === 'video') {
+            $videoUrl = trim((string) ($data['video_url'] ?? ''));
+            $driveRaw = trim((string) ($data['drive_id'] ?? ''));
+
+            // Drive mode kalau drive_id diisi
+            if ($driveRaw !== '') {
+                $driveId = $this->extractDriveId($driveRaw);
 
                 if (!$driveId) {
                     return back()->withErrors([
-                        'drive_ref' => 'Drive link / file id tidak valid.',
+                        'drive_id' => 'Drive link / file id tidak valid.',
                     ])->withInput();
                 }
 
-                Material::create([
-                    'topic_id'  => $topic->id,
-                    'title'     => $this->normalizeTitle($data['title'] ?? null, 'Video'),
-                    'type'      => 'video',
-                    'order'     => $this->nextMaterialOrder($topic->id),
-                    'drive_id'  => $driveId,
-                    'url'       => $this->drivePreviewUrl($driveId), // ✅ preview url buat iframe
-                    'file_path' => null,
+                $payload = $this->buildMaterialBasePayload($topic->id, [
+                    'title' => $this->normalizeTitle($data['title'] ?? null, 'Video'),
+                    'type'  => 'video',
                 ]);
+
+                $payload['drive_id'] = $driveId;
+                $payload['url']      = $this->drivePreviewUrl($driveId);
+
+                Material::create($payload);
 
                 return back()->with('status', 'Video (Google Drive) ditambahkan.');
             }
 
-            // default: local/url
-            if ($videoRef === '') {
+            // Local/URL mode
+            if ($videoUrl === '') {
                 return back()->withErrors([
-                    'video_ref' => 'Video URL / path lokal wajib diisi (atau isi Drive).',
+                    'video_url' => 'Video URL / path lokal wajib diisi (atau isi Drive).',
                 ])->withInput();
             }
 
-            // guard ringan: path local boleh tanpa "/" (misal videos/a.mp4)
-            // URL harus http(s)
-            if (
-                !str_starts_with($videoRef, 'http://') &&
-                !str_starts_with($videoRef, 'https://') &&
-                !str_starts_with($videoRef, '/') &&
-                !preg_match('#^[a-zA-Z0-9_\-\/]+\.(mp4|webm|ogg|mov|m4v)$#i', $videoRef)
-            ) {
-                return back()->withErrors([
-                    'video_ref' => 'Format video_ref tidak dikenali. Contoh: videos/intro.mp4 atau /storage/videos/intro.mp4 atau https://...',
-                ])->withInput();
-            }
+            $videoUrl = $this->normalizePublicVideoUrl($videoUrl);
 
-            Material::create([
-                'topic_id'  => $topic->id,
-                'title'     => $this->normalizeTitle($data['title'] ?? null, 'Video'),
-                'type'      => 'video',
-                'order'     => $this->nextMaterialOrder($topic->id),
-                'drive_id'  => null,
-                'url'       => $videoRef,
-                'file_path' => null,
+            $payload = $this->buildMaterialBasePayload($topic->id, [
+                'title' => $this->normalizeTitle($data['title'] ?? null, 'Video'),
+                'type'  => 'video',
             ]);
+
+            $payload['url'] = $videoUrl;
+
+            Material::create($payload);
 
             return back()->with('status', 'Video (local/url) ditambahkan.');
         }
 
         // ===== FILE =====
-        if ($data['type'] === 'file') {
-            // 1) kalau upload files[] ada -> create banyak record
-            if ($request->hasFile('files')) {
-                $created = 0;
-
-                foreach ((array) $request->file('files') as $uploaded) {
-                    if (!$uploaded) continue;
-
-                    $path = $uploaded->store('materials', 'public');
-
-                    Material::create([
-                        'topic_id'  => $topic->id,
-                        'title'     => $this->normalizeTitle($data['title'] ?? null, $uploaded->getClientOriginalName()),
-                        'type'      => 'file',
-                        'order'     => $this->nextMaterialOrder($topic->id),
-                        'drive_id'  => null,
-                        'url'       => null,
-                        'file_path' => $path,
-                    ]);
-
-                    $created++;
-                }
-
-                return back()->with('status', $created > 0
-                    ? "{$created} file berhasil diupload."
-                    : "Tidak ada file yang diupload."
-                );
+        if ($type === 'file') {
+            if (!$request->hasFile('files')) {
+                return back()->withErrors(['files' => 'Upload file wajib diisi.'])->withInput();
             }
 
-            // 2) optional: drive_ref untuk file (kalau nanti dipakai)
-            $driveRef = trim((string) ($data['drive_ref'] ?? ''));
-            if ($driveRef !== '') {
-                $driveId = $this->extractDriveId($driveRef);
+            $created = 0;
 
-                if (!$driveId) {
-                    return back()->withErrors([
-                        'drive_ref' => 'Drive link / file id tidak valid untuk file.',
-                    ])->withInput();
-                }
+            foreach ((array) $request->file('files') as $uploaded) {
+                if (!$uploaded) continue;
 
-                Material::create([
-                    'topic_id'  => $topic->id,
-                    'title'     => $this->normalizeTitle($data['title'] ?? null, 'File'),
-                    'type'      => 'file',
-                    'order'     => $this->nextMaterialOrder($topic->id),
-                    'drive_id'  => $driveId,
-                    'url'       => null,
-                    'file_path' => null,
+                $path = $uploaded->store('materials', 'public');
+
+                $payload = $this->buildMaterialBasePayload($topic->id, [
+                    'title' => $this->normalizeTitle($data['title'] ?? null, $uploaded->getClientOriginalName()),
+                    'type'  => 'file',
                 ]);
 
-                return back()->with('status', 'File (Google Drive) ditambahkan.');
+                $payload['file_path'] = $path;
+
+                Material::create($payload);
+
+                $created++;
             }
 
-            return back()->withErrors([
-                'files' => 'Upload file wajib (atau isi Drive untuk file).',
-            ])->withInput();
+            return back()->with('status', $created > 0
+                ? "{$created} file berhasil diupload."
+                : "Tidak ada file yang diupload."
+            );
         }
 
         // ===== LINK =====
-        if ($data['type'] === 'link') {
+        if ($type === 'link') {
             $url = trim((string) ($data['url'] ?? ''));
 
             if ($url === '') {
@@ -390,15 +398,14 @@ class MaterialController extends Controller
                 return back()->withErrors(['url' => 'URL harus diawali http:// atau https://'])->withInput();
             }
 
-            Material::create([
-                'topic_id'  => $topic->id,
-                'title'     => $this->normalizeTitle($data['title'] ?? null, 'Link'),
-                'type'      => 'link',
-                'order'     => $this->nextMaterialOrder($topic->id),
-                'drive_id'  => null,
-                'url'       => $url,
-                'file_path' => null,
+            $payload = $this->buildMaterialBasePayload($topic->id, [
+                'title' => $this->normalizeTitle($data['title'] ?? null, 'Link'),
+                'type'  => 'link',
             ]);
+
+            $payload['url'] = $url;
+
+            Material::create($payload);
 
             return back()->with('status', 'Link ditambahkan.');
         }
@@ -415,18 +422,18 @@ class MaterialController extends Controller
             'title'     => ['required', 'string', 'max:160'],
             'type'      => ['required', Rule::in(['video', 'file', 'link'])],
 
-            // video (sesuai UI edit modal)
-            'video_ref' => ['nullable', 'string', 'max:2000'],
-            'drive_ref' => ['nullable', 'string', 'max:2000'],
-            'drive_id'  => ['nullable', 'string', 'max:255'], // tetap support kalau UI ngirim ini
+            // video
+            'video_source' => ['nullable', Rule::in(['local', 'drive'])],
+            'video_url'    => ['nullable', 'string', 'max:2000'],
+            'drive_id'     => ['nullable', 'string', 'max:2000'],
 
-            // file replace (edit)
+            // file replace
             'file'      => ['nullable', 'file', 'max:51200'],
 
             // link
             'url'       => ['nullable', 'string', 'max:2000'],
 
-            // keep file_path from hidden
+            // keep file_path (from modal hidden)
             'file_path' => ['nullable', 'string', 'max:2000'],
         ]);
 
@@ -440,41 +447,39 @@ class MaterialController extends Controller
 
         // ===== VIDEO =====
         if ($data['type'] === 'video') {
-            $driveRef = trim((string) ($data['drive_ref'] ?? ''));
-            $driveIdIncoming = trim((string) ($data['drive_id'] ?? ''));
+            $source = $data['video_source'] ?? null;
 
-            // kalau pilih drive: drive_ref / drive_id harus ada
-            if ($driveRef !== '' || $driveIdIncoming !== '') {
-                $driveId = $driveIdIncoming ?: $this->extractDriveId($driveRef);
+            // edge: kalau ga ngirim, auto detect
+            if (!$source) {
+                $source = !empty(trim((string) ($data['drive_id'] ?? ''))) ? 'drive' : 'local';
+            }
+
+            if ($source === 'drive') {
+                $driveRaw = trim((string) ($data['drive_id'] ?? ''));
+                $driveId  = $this->extractDriveId($driveRaw);
 
                 if (!$driveId) {
-                    return back()->withErrors([
-                        'drive_ref' => 'Drive link / file id tidak valid.',
-                    ])->withInput();
+                    return back()->withErrors(['drive_id' => 'Drive link / file id tidak valid.'])->withInput();
                 }
 
-                $payload['drive_id'] = $driveId;
-                $payload['url'] = $this->drivePreviewUrl($driveId);
+                $payload['drive_id']  = $driveId;
+                $payload['url']       = $this->drivePreviewUrl($driveId);
                 $payload['file_path'] = null;
             } else {
-                // local/url
-                $videoRef = trim((string) ($data['video_ref'] ?? ''));
+                $videoUrl = trim((string) ($data['video_url'] ?? ''));
 
-                if ($videoRef === '') {
-                    return back()->withErrors([
-                        'video_ref' => 'Video URL / path lokal wajib diisi (atau isi Drive).',
-                    ])->withInput();
+                if ($videoUrl === '') {
+                    return back()->withErrors(['video_url' => 'Video URL / path lokal wajib diisi (atau pilih Drive).'])->withInput();
                 }
 
-                $payload['url'] = $videoRef;
+                $payload['url'] = $this->normalizePublicVideoUrl($videoUrl);
             }
         }
 
         // ===== FILE =====
         if ($data['type'] === 'file') {
-            // kalau replace file diupload
             if ($request->hasFile('file')) {
-                // hapus file lama kalau ada
+                // delete old file if exists
                 if (!empty($material->file_path)) {
                     try { Storage::disk('public')->delete($material->file_path); } catch (\Throwable $e) {}
                 }
@@ -482,19 +487,12 @@ class MaterialController extends Controller
                 $path = $request->file('file')->store('materials', 'public');
                 $payload['file_path'] = $path;
             } else {
-                // kalau tidak upload, pertahankan file_path lama via hidden atau record existing
+                // keep existing
                 $payload['file_path'] = $data['file_path'] ?? $material->file_path;
             }
 
-            // optional drive_ref untuk file (kalau mau)
-            $driveRef = trim((string) ($data['drive_ref'] ?? ''));
-            if ($driveRef !== '') {
-                $driveId = $this->extractDriveId($driveRef);
-                if (!$driveId) {
-                    return back()->withErrors(['drive_ref' => 'Drive link / file id tidak valid untuk file.'])->withInput();
-                }
-                $payload['drive_id'] = $driveId;
-            }
+            $payload['drive_id'] = null;
+            $payload['url'] = null;
         }
 
         // ===== LINK =====
@@ -522,7 +520,6 @@ class MaterialController extends Controller
         $material->load('topic.module.course');
         abort_if($material->topic->module->course->instructor_id !== auth()->id(), 403);
 
-        // kalau file upload, hapus storage-nya
         if ($material->type === 'file' && !empty($material->file_path)) {
             try { Storage::disk('public')->delete($material->file_path); } catch (\Throwable $e) {}
         }
