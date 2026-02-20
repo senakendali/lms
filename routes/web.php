@@ -22,16 +22,11 @@ use App\Http\Controllers\Student\AssignmentController as StudentAssignmentContro
 use App\Http\Controllers\Student\AttendanceController as StudentAttendanceController;
 use App\Http\Controllers\Student\CertificateController as StudentCertificateController;
 
-use App\Http\Controllers\Student\ProgressController;
-
-
-
-
 Route::get('/', function () {
     return view('welcome');
 });
 
-// ✅ Default dashboard (boleh tetap, atau nanti kita redirect sesuai role)
+// ✅ Default dashboard
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])
     ->name('dashboard');
@@ -55,17 +50,14 @@ Route::middleware(['auth', 'role:admin'])
 
         Route::resource('users', UserController::class)->except(['show']);
         Route::resource('instructors', InstructorController::class)->except(['show']);
-
         Route::resource('courses', CourseController::class)->except(['show']);
 
-        // ✅ Assign Students (separate page from edit course)
         Route::get('courses/{course}/students', [CourseController::class, 'editStudents'])
             ->name('courses.students.edit');
 
         Route::put('courses/{course}/students', [CourseController::class, 'updateStudents'])
             ->name('courses.students.update');
 
-        // Leads
         Route::resource('leads', LeadController::class)->except(['show']);
         Route::post('leads/{lead}/convert', [LeadController::class, 'convert'])->name('leads.convert');
     });
@@ -80,14 +72,10 @@ Route::middleware(['auth', 'role:instructor'])
     ->name('instructor.')
     ->group(function () {
 
-        // Courses
-        Route::get('courses', [InstructorCourseController::class, 'index'])
-            ->name('courses.index');
+        Route::get('courses', [InstructorCourseController::class, 'index'])->name('courses.index');
 
-        Route::get('courses/{course}/materials', [MaterialController::class, 'index'])
-            ->name('courses.materials');
+        Route::get('courses/{course}/materials', [MaterialController::class, 'index'])->name('courses.materials');
 
-        // Modules / Topics / Materials (custom actions)
         Route::post('modules', [MaterialController::class, 'storeModule'])->name('modules.store');
         Route::post('topics', [MaterialController::class, 'storeTopic'])->name('topics.store');
         Route::post('materials', [MaterialController::class, 'storeMaterial'])->name('materials.store');
@@ -100,7 +88,6 @@ Route::middleware(['auth', 'role:instructor'])
         Route::delete('topics/{topic}', [MaterialController::class, 'destroyTopic'])->name('topics.destroy');
         Route::delete('materials/{material}', [MaterialController::class, 'destroyMaterial'])->name('materials.destroy');
 
-        // ✅ Assignments (topic-based)
         Route::post('assignments', [AssignmentController::class, 'store'])->name('assignments.store');
         Route::put('assignments/{assignment}', [AssignmentController::class, 'update'])->name('assignments.update');
         Route::delete('assignments/{assignment}', [AssignmentController::class, 'destroy'])->name('assignments.destroy');
@@ -116,42 +103,42 @@ Route::middleware(['auth', 'role:student'])
     ->name('student.')
     ->group(function () {
 
-        // ✅ nav lu nanti match ini
-        Route::get('dashboard', [StudentDashboardController::class, 'index'])
-            ->name('dashboard');
+        Route::get('dashboard', [StudentDashboardController::class, 'index'])->name('dashboard');
 
-        Route::get('courses', [StudentCourseController::class, 'index'])
-            ->name('courses.index');
+        Route::get('courses', [StudentCourseController::class, 'index'])->name('courses.index');
+        Route::get('courses/{course}', [StudentCourseController::class, 'show'])->name('courses.show');
 
-        Route::get('courses/{course}', [StudentCourseController::class, 'show'])
-            ->name('courses.show');
+        // kalau lu emang punya page progress summary
+        Route::get('progress', [StudentProgressController::class, 'index'])->name('progress.index');
 
-        // progress
-        Route::get('progress', [StudentProgressController::class, 'index'])
-            ->name('progress.index');
+        Route::get('assignments', [StudentAssignmentController::class, 'index'])->name('assignments.index');
+        Route::get('assignments/{assignment}', [StudentAssignmentController::class, 'show'])->name('assignments.show');
 
-        // assignments (list tugas dari course yang diikuti)
-        Route::get('assignments', [StudentAssignmentController::class, 'index'])
-            ->name('assignments.index');
+        Route::get('attendance', [StudentAttendanceController::class, 'index'])->name('attendance.index');
+        Route::get('certificates', [StudentCertificateController::class, 'index'])->name('certificates.index');
 
-        Route::get('assignments/{assignment}', [StudentAssignmentController::class, 'show'])
-            ->name('assignments.show');
+        // ✅ topic progress (manual) — MATCH UI: student.topics.mark
+        Route::post('topics/{topic}/mark', [StudentProgressController::class, 'markTopic'])
+            ->name('topics.mark');
 
-        // attendance (optional)
-        Route::get('attendance', [StudentAttendanceController::class, 'index'])
-            ->name('attendance.index');
+        // ✅ video progress GET (resume) — MATCH UI: student.videos.progress.get
+        Route::get('videos/{material}/progress', [StudentProgressController::class, 'getVideoProgress'])
+            ->name('videos.progress.get');
 
-        // certificates (optional)
-        Route::get('certificates', [StudentCertificateController::class, 'index'])
-            ->name('certificates.index');
+        // ✅ video progress POST — MATCH UI: student.videos.progress
+        Route::post('videos/{material}/progress', [StudentProgressController::class, 'saveVideoProgress'])
+            ->name('videos.progress');
+
+        /**
+         * ✅ OPTIONAL BUT HIGHLY RECOMMENDED
+         * stream video local (file_path) dengan RANGE SUPPORT (206)
+         * -> ini yang biasanya bikin resume/seek “beneran nempel”
+         *
+         * NOTE:
+         * controller StudentProgressController harus punya method streamVideo()
+         */
+        Route::get('videos/{material}/stream', [StudentProgressController::class, 'streamVideo'])
+            ->name('videos.stream');
     });
-
-Route::prefix('student')->name('student.')->middleware(['auth'])->group(function () {
-  Route::post('/topics/{topic}/mark', [ProgressController::class, 'markTopic'])
-    ->name('topics.mark');
-
-  Route::post('/videos/{material}/progress', [ProgressController::class, 'saveVideoProgress'])
-    ->name('videos.progress');
-});
 
 require __DIR__ . '/auth.php';
