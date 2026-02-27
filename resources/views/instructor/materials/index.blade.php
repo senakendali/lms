@@ -76,10 +76,11 @@
           {{-- ✅ PATCH: learning objective jadi textarea + autogrow --}}
           <div class="col-12 col-lg-6">
             <label class="form-label small mb-1">Learning Objective</label>
-            <textarea class="form-control js-autogrow"
-                      name="learning_objectives"
-                      rows="2"
-                      placeholder="Tulis objective singkat (boleh bullet)...">{{ old('learning_objectives') }}</textarea>
+             <input class="form-control"
+                   name="learning_objectives"
+                   value="{{ old('learning_objectives') }}"
+                   placeholder="Tulis objective singkat">
+            
           </div>
 
           <div class="col-12 col-lg-2">
@@ -484,7 +485,7 @@
 
                                 @if(($topic->delivery_type ?? 'video') === 'live')
                                   <div class="small text-muted mb-2">
-                                    Ini buat <b>video recording</b> hasil live session. Setelah kelas selesai, upload / tempel link rekaman di sini.
+                                    Bagian ini digunakan untuk menyimpan rekaman video hasil live session. Setelah kelas selesai, silakan unggah file rekaman atau tambahkan tautan video pada bagian ini.
                                   </div>
                                 @endif
 
@@ -790,7 +791,7 @@
                               </form>
                             </div>
 
-                            {{-- 4) ASSIGNMENTS --}}
+                            {{-- 4) ASSIGNMENTS (✅ PATCH: bigger desc + Quill create/edit) --}}
                             <div class="editor-block">
                               <div class="fw-semibold d-flex align-items-center justify-content-between mb-2">
                                 <div class="d-flex align-items-center gap-2">
@@ -808,7 +809,8 @@
                                 {{-- Add Assignment --}}
                                 <form method="POST"
                                       action="{{ route('instructor.assignments.store') }}"
-                                      class="row g-2 align-items-end mb-3">
+                                      class="row g-2 align-items-end mb-3 js-assignment-create-form"
+                                      data-topic="{{ $topic->id }}">
                                   @csrf
                                   <input type="hidden" name="topic_id" value="{{ $topic->id }}">
 
@@ -836,10 +838,31 @@
 
                                   <div class="col-12">
                                     <label class="form-label small mb-1">Deskripsi (opsional)</label>
-                                    <textarea class="form-control form-control-sm js-autogrow"
-                                              name="description"
+
+                                    <input type="hidden"
+                                           name="description"
+                                           class="js-assignment-desc-input"
+                                           value="">
+
+                                    <div class="quill-assign-create-wrap"
+                                         data-topic="{{ $topic->id }}">
+                                      <div id="quill-assignment-create-{{ $topic->id }}"
+                                           class="quill-editor quill-assignment"></div>
+                                    </div>
+
+                                    <noscript>
+                                      <div class="alert alert-warning small mt-2 mb-0">
+                                        JavaScript mati. Deskripsi pakai textarea:
+                                      </div>
+                                    </noscript>
+
+                                    <textarea class="form-control form-control-sm mt-2 d-none js-assignment-desc-fallback"
                                               rows="5"
                                               placeholder="Instruksi singkat tugas..."></textarea>
+
+                                    <div class="small text-muted mt-2">
+                                      Tips: pakai bullet/list biar instruksi jelas.
+                                    </div>
                                   </div>
 
                                   <div class="col-12 d-flex align-items-center gap-2">
@@ -891,7 +914,7 @@
                                           </div>
 
                                           @if(!empty(trim(strip_tags((string)($as->description ?? '')))))
-                                            <div class="small text-muted mt-1 assignment-desc">
+                                            <div class="assignment-desc mt-2">
                                               {!! $as->description !!}
                                             </div>
                                           @endif
@@ -1199,7 +1222,7 @@
     </div>
   </div>
 
-  {{-- Edit Assignment Modal --}}
+  {{-- ✅ PATCH: Edit Assignment Modal pakai Quill --}}
   <div class="modal fade" id="editAssignmentModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg">
       <form method="POST" class="modal-content" id="editAssignmentForm">
@@ -1239,8 +1262,19 @@
 
             <div class="col-12">
               <label class="form-label">Description</label>
-              <textarea class="form-control js-autogrow" rows="4" name="description" id="editAssignmentDescription"
+
+              <input type="hidden" name="description" id="editAssignmentDescriptionInput" value="">
+
+              <div class="quill-assign-edit-wrap" data-initial="">
+                <div id="quill-assignment-edit" class="quill-editor quill-assignment"></div>
+              </div>
+
+              <textarea class="form-control mt-2 d-none" rows="4" id="editAssignmentDescriptionFallback"
                         placeholder="Instruksi tugas..."></textarea>
+
+              <div class="small text-muted mt-2">
+                Gunakan bullet/list biar instruksi jelas.
+              </div>
             </div>
           </div>
         </div>
@@ -1300,7 +1334,26 @@
       background:#fff;
       border:1px solid rgba(0,0,0,.08);
     }
-    .assignment-desc{ white-space: pre-line; }
+
+    /* ✅ PATCH: Assignment description dibesarin */
+    .assignment-desc{
+      white-space: pre-line;
+      font-size: 1rem;
+      line-height: 1.65;
+      color: rgba(0,0,0,.78);
+    }
+    .assignment-desc p{ margin-bottom: .5rem; }
+    .assignment-desc ul, .assignment-desc ol{ margin-bottom: .6rem; padding-left: 1.25rem; }
+
+    /* ✅ PATCH: Quill assignment lebih lega */
+    .quill-assignment{
+      min-height: 140px;
+      background: #fff;
+    }
+    .quill-assignment .ql-editor{
+      font-size: .98rem;
+      line-height: 1.6;
+    }
 
     .video-modal{
       border: 1px solid rgba(0,0,0,.08);
@@ -1695,33 +1748,6 @@
         });
       }
 
-      function initEditAssignmentModalOnce(){
-        if(STATE.editAssignmentBound) return;
-        STATE.editAssignmentBound = true;
-
-        const editAssignmentModal = document.getElementById('editAssignmentModal');
-        editAssignmentModal?.addEventListener('show.bs.modal', (ev) => {
-          const btn = ev.relatedTarget;
-          if(!btn) return;
-
-          const id = btn.getAttribute('data-id');
-          const title = btn.getAttribute('data-title') || '';
-          const desc = btn.getAttribute('data-description') || '';
-          const maxScore = btn.getAttribute('data-max_score') || '100';
-          const dueAt = btn.getAttribute('data-due_at') || '';
-          const isPub = btn.getAttribute('data-is_published') || '0';
-
-          document.getElementById('editAssignmentTitle').value = title;
-          document.getElementById('editAssignmentDescription').value = desc;
-          document.getElementById('editAssignmentMaxScore').value = maxScore;
-          document.getElementById('editAssignmentDueAt').value = dueAt;
-          document.getElementById('editAssignmentPublished').value = isPub;
-
-          autoGrow(document.getElementById('editAssignmentDescription'));
-          document.getElementById('editAssignmentForm').action = `{{ url('instructor/assignments') }}/${id}`;
-        });
-      }
-
       function toggleEditMaterialFields(type) {
         const v = document.getElementById('editMaterialVideoWrap');
         const f = document.getElementById('editMaterialFileWrap');
@@ -1807,7 +1833,7 @@
         document.getElementById('editVideoDrive')?.addEventListener('change', () => setEditVideoSource('drive'));
       }
 
-      // Quill init
+      // Quill init (Outline)
       const QUILL_INSTANCES = STATE.quillInstances || new Map();
       STATE.quillInstances = QUILL_INSTANCES;
 
@@ -1878,6 +1904,148 @@
 
       function initQuillAll(){
         document.querySelectorAll('.quill-wrap').forEach(wrap => initQuillForWrap(wrap));
+      }
+
+      // ============================
+      // ✅ Assignment Quill (Create + Edit Modal)
+      // ============================
+      const ASSIGN_CREATE_QUILL = STATE.assignCreateQuill || new Map();
+      STATE.assignCreateQuill = ASSIGN_CREATE_QUILL;
+
+      function initAssignmentCreateQuill(){
+        document.querySelectorAll('.quill-assign-create-wrap').forEach(wrap => {
+          const topicId = wrap.getAttribute('data-topic');
+          const editorEl = document.getElementById(`quill-assignment-create-${topicId}`);
+          if(!topicId || !editorEl) return;
+
+          if(ASSIGN_CREATE_QUILL.has(String(topicId))) return;
+
+          if(!window.Quill){
+            console.warn('Quill belum ter-load (assignment create).');
+            const form = wrap.closest('form');
+            const fallback = form?.querySelector('.js-assignment-desc-fallback');
+            fallback?.classList.remove('d-none');
+            return;
+          }
+
+          const quill = new Quill(editorEl, {
+            theme: 'snow',
+            modules: {
+              toolbar: [
+                ['bold','italic','underline'],
+                [{ list: 'ordered' }, { list: 'bullet' }],
+                ['clean']
+              ]
+            }
+          });
+
+          ASSIGN_CREATE_QUILL.set(String(topicId), quill);
+
+          const form = wrap.closest('form');
+          const input = form?.querySelector('.js-assignment-desc-input');
+          const fallback = form?.querySelector('.js-assignment-desc-fallback');
+
+          const sync = () => {
+            const html = quill.root.innerHTML;
+            if(input) input.value = html;
+            if(fallback) fallback.value = html;
+          };
+
+          sync();
+          quill.on('text-change', sync);
+
+          if(fallback){
+            fallback.classList.add('d-none');
+            fallback.value = quill.root.innerHTML;
+          }
+
+          form?.addEventListener('submit', sync);
+        });
+      }
+
+      function initAssignmentEditQuillOnce(){
+        if(STATE.assignEditQuillBound) return;
+        STATE.assignEditQuillBound = true;
+
+        const editorEl = document.getElementById('quill-assignment-edit');
+        if(!editorEl) return;
+
+        if(!window.Quill){
+          console.warn('Quill belum ter-load (assignment edit).');
+          document.getElementById('editAssignmentDescriptionFallback')?.classList.remove('d-none');
+          return;
+        }
+
+        const quill = new Quill(editorEl, {
+          theme: 'snow',
+          modules: {
+            toolbar: [
+              ['bold','italic','underline'],
+              [{ list: 'ordered' }, { list: 'bullet' }],
+              ['clean']
+            ]
+          }
+        });
+
+        STATE.assignEditQuill = quill;
+
+        const input = document.getElementById('editAssignmentDescriptionInput');
+        const fallback = document.getElementById('editAssignmentDescriptionFallback');
+
+        const sync = () => {
+          const html = quill.root.innerHTML;
+          if(input) input.value = html;
+          if(fallback) fallback.value = html;
+        };
+
+        sync();
+        quill.on('text-change', sync);
+
+        document.getElementById('editAssignmentForm')?.addEventListener('submit', sync);
+      }
+
+      function initEditAssignmentModalOnce(){
+        if(STATE.editAssignmentBound) return;
+        STATE.editAssignmentBound = true;
+
+        const editAssignmentModal = document.getElementById('editAssignmentModal');
+        editAssignmentModal?.addEventListener('show.bs.modal', (ev) => {
+          const btn = ev.relatedTarget;
+          if(!btn) return;
+
+          const id = btn.getAttribute('data-id');
+          const title = btn.getAttribute('data-title') || '';
+          const desc = btn.getAttribute('data-description') || '';
+          const maxScore = btn.getAttribute('data-max_score') || '100';
+          const dueAt = btn.getAttribute('data-due_at') || '';
+          const isPub = btn.getAttribute('data-is_published') || '0';
+
+          document.getElementById('editAssignmentTitle').value = title;
+          document.getElementById('editAssignmentMaxScore').value = maxScore;
+          document.getElementById('editAssignmentDueAt').value = dueAt;
+          document.getElementById('editAssignmentPublished').value = isPub;
+
+          document.getElementById('editAssignmentForm').action = `{{ url('instructor/assignments') }}/${id}`;
+
+          initAssignmentEditQuillOnce();
+
+          const html = decodeHtml(desc || '');
+          const input = document.getElementById('editAssignmentDescriptionInput');
+          const fallback = document.getElementById('editAssignmentDescriptionFallback');
+
+          if(input) input.value = html;
+
+          if(STATE.assignEditQuill){
+            try{
+              STATE.assignEditQuill.clipboard.dangerouslyPasteHTML(html || '');
+            }catch(e){
+              try{ STATE.assignEditQuill.root.innerHTML = html || ''; }catch(_){}
+            }
+          }else{
+            fallback?.classList.remove('d-none');
+            if(fallback) fallback.value = html || '';
+          }
+        });
       }
 
       // OUTLINE toggle (delegation, bind sekali)
@@ -1979,6 +2147,11 @@
         initAutogrow();
         initVideoModeBlocks();
         initQuillAll();
+
+        // ✅ assignment quill
+        initAssignmentCreateQuill();
+        initAssignmentEditQuillOnce();
+
         initTopicChevronOnce();
         initOutlineToggleOnce();
         initVideoPreviewModalOnce();
@@ -1995,6 +2168,20 @@
         const newModules = doc.querySelector('#modulesAcc');
         if(newModules){
           const modulesAcc = document.querySelector('#modulesAcc');
+
+          // ✅ RESET Quill cache karena DOM akan diganti
+          if(window.__LMS_MATERIALS__){
+            if(window.__LMS_MATERIALS__.quillInstances?.clear) {
+              window.__LMS_MATERIALS__.quillInstances.clear();
+            }
+            if(window.__LMS_MATERIALS__.assignCreateQuill?.clear) {
+              window.__LMS_MATERIALS__.assignCreateQuill.clear();
+            }
+            // edit quill (modal) aman, tapi kita reset juga biar clean
+            window.__LMS_MATERIALS__.assignEditQuill = null;
+            window.__LMS_MATERIALS__.assignEditQuillBound = false;
+          }
+
           if(modulesAcc) modulesAcc.replaceWith(newModules);
         }
 
@@ -2165,6 +2352,10 @@
       initAutogrow();
       initVideoModeBlocks();
       initQuillAll();
+
+      // ✅ assignment quill init
+      initAssignmentCreateQuill();
+      initAssignmentEditQuillOnce();
 
       initGlobalSubmitOnce();
       initConfirmModalOnce();
